@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(ssh -o StrictHostKeyChecking=no -o ConnectTimeout=15 root@103.125.254.120 \"pwd; ls -la; echo '---'; cat setup.sh 2>/dev/null | head -200\")",
+      "Bash(ssh -o StrictHostKeyChecking=no root@103.125.254.120 \"cat setup.sh | sed -n '200,700p'\")"
+    ]
+  }
+}

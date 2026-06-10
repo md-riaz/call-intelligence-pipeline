@@ -1,0 +1,11 @@
+# Core dependency. Pulls in ctranslate2, tokenizers, onnxruntime (for VAD), etc.
+faster-whisper>=1.0.0
+
+# Optional — only needed if you build spreadsheet/HTML reports from transcripts.
+# pandas
+# openpyxl
+# jinja2
+
+# NOTE: ffmpeg is a SYSTEM dependency, not a pip package. Install it via your
+# OS package manager (apt install ffmpeg / brew install ffmpeg / choco install ffmpeg)
+# or let setup.sh handle it on Debian/Ubuntu.

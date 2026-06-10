@@ -1,0 +1,38 @@
+[build-system]
+requires = ["setuptools>=64", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "audio-transcription-pipeline"
+version = "1.0.0"
+description = "General-purpose audio call recording → speaker-labelled transcript pipeline, built on faster-whisper."
+readme = "README.md"
+license = { text = "MIT" }
+requires-python = ">=3.9"
+authors = [{ name = "audio-transcription-pipeline contributors" }]
+keywords = ["whisper", "transcription", "speech-to-text", "asr", "call-recording", "diarization"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Topic :: Multimedia :: Sound/Audio :: Speech",
+]
+dependencies = [
+    "faster-whisper>=1.0.0",
+]
+
+[project.optional-dependencies]
+# Extras used by reporting/export helpers; not required for core transcription.
+reports = ["pandas", "openpyxl", "jinja2"]
+dev = ["pytest", "ruff"]
+
+[project.scripts]
+transcribe = "transcribe.cli:main"
+transcribe-check = "transcribe.accuracy:main"
+
+[project.urls]
+Homepage = "https://github.com/your-org/audio-transcription-pipeline"
+Issues = "https://github.com/your-org/audio-transcription-pipeline/issues"
+
+[tool.setuptools]
+packages = ["transcribe"]
