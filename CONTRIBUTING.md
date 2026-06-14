@@ -13,16 +13,23 @@ pip install -e ".[dev]"
 # Install ffmpeg via your OS package manager (apt/brew/choco).
 ```
 
+To test the Gemini backend locally, also install its dependency and set your key:
+
+```bash
+pip install -e ".[dev,gemini]"
+export GOOGLE_API_KEY=your_key_here   # free at https://aistudio.google.com
+```
+
 ## Running checks
 
 ```bash
-pytest            # fast smoke tests — no model download needed
+pytest            # fast smoke tests — no model download or API key needed
 ruff check .      # lint
 ```
 
-The smoke tests deliberately avoid downloading a model or touching real audio so
-they run in seconds in CI. If you add behavior that needs a model, guard it
-behind a marker so the default `pytest` run stays fast.
+The smoke tests deliberately avoid downloading a model or calling any API so
+they run in seconds in CI. If you add behaviour that needs a model or API call,
+guard it behind a marker so the default `pytest` run stays fast.
 
 ## Guidelines
 
@@ -36,11 +43,19 @@ behind a marker so the default `pytest` run stays fast.
   change them, explain why and show before/after output on a noisy sample.
 - **Never commit audio or transcripts.** They may contain personal data and are
   git-ignored for that reason.
-- Match the existing style; keep functions small and commented where the
-  *why* isn't obvious.
+- **Adding a new backend.** Create `transcribe/<name>_engine.py` with a class
+  that exposes a `.transcribe(audio_path, language, speaker_labels)` method
+  returning a dict with the standard keys (`segments`, `full_text`,
+  `language_detected`, `language_confidence`, `duration_seconds`,
+  `processing_time_seconds`, `speakers_separated`). Wire it into `pipeline.py`
+  and the `--engine` choices in `cli.py`. Add an optional pip extra in
+  `pyproject.toml` and document it in `README.md`.
+- Match the existing style; keep functions small and comment only where the
+  *why* isn't obvious from the code.
 
 ## Reporting issues
 
-Please include: OS, Python version, the exact command, the model used, and a
-description of the audio (sample rate, mono/stereo, language, roughly how noisy).
-If you can, attach a short **non-sensitive** clip that reproduces the problem.
+Please include: OS, Python version, the exact command, the backend (`whisper` or
+`gemini`), the model/API used, and a description of the audio (sample rate,
+mono/stereo, language, roughly how noisy). If you can, attach a short
+**non-sensitive** clip that reproduces the problem.
