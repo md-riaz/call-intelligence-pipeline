@@ -3,41 +3,32 @@
 Turn **call recordings** into transcripts, quality scores, and agent coaching insights —
 in **any language**, from a single command.
 
-Two backends are available:
-
-- **Google Gemini** (`--engine gemini`, **default**) — sends audio to Google's API.
-  Free tier gives 1,500 requests/day via Google AI Studio. Produces **excellent Bengali
-  transcriptions** from the same 8 kHz call recordings that trip up Whisper.
-- **Whisper** (`--engine whisper`) — runs entirely on your own hardware, completely
-  free, no API key. Best for privacy-sensitive deployments or offline environments.
-  Works well for English and many languages; struggles with Bengali on phone audio.
+Powered by **Google Gemini** (free API, 1,500 calls/day). Handles real-world call
+center audio — 8 kHz phone lines, low bitrates, noisy environments — with excellent
+accuracy for Bengali and other South Asian languages.
 
 > Works with recordings from **any** source — IP-PBX/SIP systems (FreeSWITCH,
-> Asterisk, FusionPBX, 3CX), softphones, mobile call recorders, Zoom/Meet
-> exports, voicemail, podcasts, interviews. It's just audio in, transcript out.
+> Asterisk, FusionPBX, 3CX), softphones, mobile call recorders, Zoom/Meet exports,
+> voicemail, podcasts, interviews. Audio in, intelligence out.
 
 ---
 
 ## Features
 
-- **Two backends** — local Whisper (free, private, offline) or Google Gemini
-  (free API tier, excellent Bengali accuracy).
-- **Any language** — auto-detected by default, or force a code (`--language bn`,
-  `en`, `hi`, `ar`, `es`, …). Whisper supports ~99 languages; Gemini 100+.
-- **Any format** — `wav, mp3, ogg, opus, flac, m4a, aac, gsm, amr` (anything
-  ffmpeg can read).
-- **Speaker separation for stereo calls** — many phone systems record the two
-  parties on separate left/right channels. Each channel is transcribed
-  independently, with configurable labels (`--labels "Agent,Customer"`).
-- **Robust on bad audio** — band-pass + loudness normalization (EBU R128), plus
-  Whisper decoding tuned to prevent the classic *repetition-loop* failure mode.
-- **Batch or single file** — process one recording or recurse a whole folder,
-  optionally limited to the last N days. Already-processed files are skipped.
-- **Three output formats per recording** — `.json` (structured, with timestamps
-  and confidence), `.txt` (human-readable), and `.srt` (subtitles).
-- **CPU or GPU** — Whisper runs on a small VPS (large-v3 int8 ≈ 3 GB RAM) or
-  accelerates on CUDA automatically.
-- **Installable CLI** — `transcribe`, `transcribe-analyze`, and `transcribe-check`, plus a Python API.
+- **Transcription** — accurate, speaker-labelled transcripts via Google Gemini Flash.
+  Handles stereo call recordings natively (Agent / Customer on separate channels).
+- **Call quality analysis** — per-call scoring: issue type, resolution status, customer
+  sentiment, agent behavior flags, strengths, and a concrete coaching tip.
+- **Batch summary CSV** — one row per call, ready to import into Excel or any BI tool
+  for agent scorecards and trend analysis.
+- **Any language** — auto-detected, or force a code (`--language bn`, `en`, `hi`, `ar`, …).
+- **Any format** — `wav, mp3, ogg, opus, flac, m4a, aac, gsm, amr`.
+- **Batch or single file** — process one recording or recurse a whole folder, optionally
+  limited to the last N days. Already-processed files are skipped.
+- **Three output formats** — `.json` (structured), `.txt` (readable), `.srt` (subtitles).
+- **Offline fallback** — swap to local Whisper (`--engine whisper`) when audio must not
+  leave your servers. Note: Whisper accuracy on Bengali phone audio is poor.
+- **Installable CLI** — `transcribe`, `transcribe-analyze`, `transcribe-check`.
 
 ---
 
@@ -45,8 +36,7 @@ Two backends are available:
 
 - **Python 3.9+**
 - **ffmpeg** (system package — *not* installed by pip)
-- For Whisper: ~3 GB RAM for `large-v3` int8 (less for smaller models)
-- For Gemini: a free API key from [aistudio.google.com](https://aistudio.google.com)
+- A free Google AI Studio API key — [aistudio.google.com](https://aistudio.google.com)
 
 ---
 
@@ -56,12 +46,9 @@ Two backends are available:
 
 ```bash
 git clone https://github.com/md-riaz/call-intelligence-pipeline.git
-cd audio-transcription-pipeline
+cd call-intelligence-pipeline
 bash setup.sh
 ```
-
-`setup.sh` installs ffmpeg + Python, creates `.venv`, installs the package,
-recommends a Whisper model based on available RAM, and offers to download it.
 
 ### Option B — manual (macOS / Windows / any Linux)
 
@@ -73,36 +60,29 @@ recommends a Whisper model based on available RAM, and offers to download it.
 
 # 2. Clone and install
 git clone https://github.com/md-riaz/call-intelligence-pipeline.git
-cd audio-transcription-pipeline
+cd call-intelligence-pipeline
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
-pip install .
-
-# 3. Optional: Gemini backend
 pip install ".[gemini]"
-export GOOGLE_API_KEY=your_key_here   # free key at https://aistudio.google.com
-```
 
-The Whisper model downloads automatically on first run (cached in
-`~/.cache/whisper_models`).
+# 3. Set your API key (free at https://aistudio.google.com)
+export GOOGLE_API_KEY=your_key_here
+```
 
 ---
 
 ## Quick start
 
 ```bash
-# 1. Transcribe — Bengali call recording (Gemini is the default engine)
+# 1. Transcribe a Bengali call recording
 transcribe --file call.wav --language bn --labels "Agent,Customer"
 
-# 2. Analyze — score the transcript for quality, sentiment, and flags
+# 2. Analyze the transcript — scores, sentiment, flags
 transcribe-analyze --file transcripts/call.json
 
-# Batch: transcribe then analyze an entire folder
+# Batch: transcribe + analyze an entire folder
 transcribe --input /recordings --language bn --labels "Agent,Customer" --days 7
 transcribe-analyze --input transcripts/    # writes analysis_summary.csv
-
-# Use local Whisper instead (no API key, audio stays on your machine)
-transcribe --file call.wav --engine whisper --language bn
 ```
 
 Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
@@ -111,41 +91,39 @@ Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
 
 ## Usage
 
-### `transcribe` — main CLI
+### `transcribe` — transcription CLI
 
 | Option | Description | Default |
 |---|---|---|
 | `--file, -f` | Transcribe a single audio file | — |
 | `--input, -i` | Transcribe a directory (recursive) | — |
 | `--output, -o` | Output directory | `./transcripts` |
-| `--engine` | `gemini` or `whisper` | `gemini` |
 | `--language, -l` | Force an ISO code, or `auto` to detect | `auto` |
-| `--labels` | Comma-separated labels for stereo channels | `Speaker A,Speaker B` |
+| `--labels` | Comma-separated speaker labels for stereo channels | `Speaker A,Speaker B` |
 | `--days, -d` | With `--input`: only files modified in last N days | all |
-| `--model, -m` | Whisper model size (`tiny`/`base`/`small`/`medium`/`large-v3`) | `large-v3` |
-| `--device` | `auto`/`cpu`/`cuda` (Whisper only) | `auto` |
-| `--compute-type` | ctranslate2 compute type (Whisper only) | `int8` on CPU |
-| `--google-api-key` | Google AI Studio API key (overrides `GOOGLE_API_KEY` env var) | — |
+| `--google-api-key` | Google AI Studio API key (overrides `GOOGLE_API_KEY`) | — |
 | `--no-separate-speakers` | Mix stereo to mono instead of splitting channels | off |
 | `--no-srt` | Skip writing `.srt` subtitles | off |
 | `--reprocess` | Re-transcribe files even if already done | off |
+| `--engine` | `gemini` (default) or `whisper` (offline fallback) | `gemini` |
 
 (`--file` and `--input` are mutually exclusive; one is required.)
 
+---
+
 ### `transcribe-analyze` — call quality analysis
 
-Reads transcript `.json` files and scores them with Gemini. Appends an
-`analysis` block to each JSON in-place and writes `analysis_summary.csv`
-for management review.
+Reads transcript `.json` files, scores them with Gemini, and appends an `analysis`
+block to each JSON. Also writes `analysis_summary.csv` covering all analyzed calls.
 
 ```bash
 # Analyze one transcript
 transcribe-analyze --file transcripts/call.json
 
-# Analyze a whole folder, regenerate summary CSV
+# Analyze a whole folder + regenerate CSV
 transcribe-analyze --input transcripts/
 
-# Re-score everything (e.g. after updating the rubric)
+# Re-score everything (e.g. after refining the prompt)
 transcribe-analyze --input transcripts/ --reanalyze
 ```
 
@@ -161,42 +139,43 @@ Each analyzed file gets an `analysis` block added to its JSON:
 
 ```json
 "analysis": {
-  "brand": "pbx.bd",
+  "brand": "Alpha PBX",
   "issue_category": "billing",
   "issue_summary": "Customer requested a BDT 4000 invoice for manual recharge.",
   "resolution": "partial",
+  "resolution_note": "Invoice promised but balance update not confirmed on the call.",
   "customer_sentiment": "frustrated",
   "sentiment_score": 2,
-  "agent_score": 75,
-  "agent_flags": ["slow response on urgent request"],
-  "strengths": ["polite throughout", "confirmed phone number back to customer"],
-  "coaching_tip": "Acknowledge recurring issues and provide a timeline or escalation path."
+  "agent_score": 90,
+  "agent_flags": ["did not address customer's recurring manual recharge complaint"],
+  "strengths": ["polite throughout", "confirmed contact number back to customer"],
+  "coaching_tip": "Acknowledge recurring issues and give a timeline or escalation path."
 }
 ```
 
-The `analysis_summary.csv` has one row per call — import into Excel or any
-BI tool for agent scorecards and trend analysis.
+The `analysis_summary.csv` has one row per call — import into Excel or any BI tool
+for weekly agent scorecards and management trend reports.
 
 ---
 
-### `transcribe-check` — self-test (Whisper only)
+### `transcribe-check` — Whisper self-test
 
-Runs one recording end-to-end and prints a verdict. Use it after install or
-when results look off:
+Only relevant when using `--engine whisper`. Runs one file end-to-end and flags
+repetition loops (a common Whisper failure on noisy audio):
 
 ```bash
-transcribe-check --file call.wav --model large-v3 --language bn
+transcribe-check --file call.wav --language en
 ```
 
-It explicitly flags **repetition loops** (`R`) rather than reporting them as
-high-confidence success.
+---
 
 ### Python API
 
 ```python
 from transcribe import TranscriptionPipeline
+from transcribe.analyze import CallAnalyzer
 
-# Gemini (default — free cloud API, excellent Bengali accuracy)
+# Transcribe
 pipe = TranscriptionPipeline(
     engine="gemini",
     google_api_key="your_key",   # or set GOOGLE_API_KEY env var
@@ -204,18 +183,12 @@ pipe = TranscriptionPipeline(
     speaker_labels=("Agent", "Customer"),
     output_dir="./transcripts",
 )
-
-# Whisper (local, offline, audio stays on your machine)
-pipe = TranscriptionPipeline(
-    engine="whisper",
-    model_size="large-v3",
-    language="bn",
-    speaker_labels=("Agent", "Customer"),
-    output_dir="./transcripts",
-)
-
 result = pipe.process_file("call.wav")
-print(result.full_text)
+
+# Analyze
+analyzer = CallAnalyzer(api_key="your_key")
+analysis = analyzer.analyze_file("transcripts/call.json")
+print(analysis.agent_score, analysis.coaching_tip)
 ```
 
 ---
@@ -224,51 +197,55 @@ print(result.full_text)
 
 For a recording `call123.wav` you get:
 
-- **`call123.json`** — structured: per-segment `start`/`end`, `text`,
-  `speaker`, `avg_logprob`, `no_speech_prob`, `compression_ratio`, plus
-  detected language, duration, model, and word count.
-- **`call123.txt`** — a readable transcript with speaker turns and a timed
-  segment list.
-- **`call123.srt`** — subtitles (speaker-prefixed), usable in any video player.
-
-A `processed_files.json` index lets re-runs skip work already done (override
-with `--reprocess`).
+- **`call123.json`** — structured: per-segment `start`/`end`, `text`, `speaker`,
+  confidence fields, detected language, duration, model, word count. After analysis,
+  also contains the `analysis` block shown above.
+- **`call123.txt`** — readable transcript with speaker turns and timed segment list.
+- **`call123.srt`** — subtitles (speaker-prefixed), playable in any video player.
+- **`analysis_summary.csv`** — batch analysis summary, one row per call.
 
 ---
 
 ## How it works
 
-### Whisper path (default)
-
 ```
-audio file ──> ffmpeg preprocess ──> faster-whisper ──> JSON / TXT / SRT
-              (16 kHz mono WAV,       (large-v3, anti-
-               band-pass 200–3400 Hz,  repetition decoding)
-               EBU R128 loudnorm)
-
-stereo? ──> split L/R channels ──> transcribe each ──> merge timeline
-            (per-channel loudnorm)                     (speaker-labelled)
-```
-
-1. **Preprocess** to 16 kHz mono WAV with telephony band-pass and loudness
-   normalization so quiet calls reach a consistent level.
-2. **Stereo recordings** split into left/right channels, transcribed separately,
-   merged into a chronological speaker-labelled transcript.
-3. **Transcribe** with faster-whisper using decoding parameters tuned to prevent
-   hallucination on noisy audio.
-
-### Gemini path (`--engine gemini`)
-
-```
-audio file ──> Google Gemini API ──> structured prompt ──> JSON / TXT / SRT
-              (original file sent;    (speaker labels +
-               stereo handled         [MM:SS] timestamps)
-               natively)
+call recording ──> Google Gemini API ──> transcript (JSON / TXT / SRT)
+                   (original file;                    │
+                    stereo handled natively)           ▼
+                                           Gemini analysis prompt
+                                                       │
+                                                       ▼
+                                           analysis block appended to JSON
+                                           + analysis_summary.csv updated
 ```
 
-The original audio file is sent directly to Gemini. No local preprocessing is
-needed — Gemini handles stereo diarization via structured prompting. Timestamps
-are approximate (`[MM:SS]` granularity rather than word-level milliseconds).
+1. The audio file is sent to Gemini with a structured transcription prompt.
+   Gemini handles stereo speaker separation natively — no local preprocessing needed.
+   Timestamps in the output are approximate (`[MM:SS]` granularity).
+2. Each transcript JSON is then passed to a second Gemini call with a quality
+   analysis prompt. It returns brand, issue category, FCR, sentiment, agent score,
+   flags, strengths, and a coaching tip as structured JSON.
+3. The analysis block is written back into the transcript JSON in-place, and
+   `analysis_summary.csv` is regenerated from all analyzed files.
+
+---
+
+## Offline / privacy mode (`--engine whisper`)
+
+If audio cannot leave your servers, pass `--engine whisper` to use local
+[faster-whisper](https://github.com/SYSTRAN/faster-whisper) instead of Gemini.
+
+```bash
+pip install .   # faster-whisper is a core dependency
+transcribe --file call.wav --engine whisper --language en
+```
+
+**Limitations when using Whisper:**
+- Bengali accuracy is poor on low-quality phone audio (8 kHz, noisy lines).
+  Use Gemini for Bengali calls.
+- Requires ~3 GB RAM for the `large-v3` model (int8).
+- `transcribe-analyze` still requires a Gemini API key — analysis is always cloud-based.
+- `--device cuda` enables GPU acceleration if CUDA is available.
 
 ---
 
@@ -276,113 +253,25 @@ are approximate (`[MM:SS]` granularity rather than word-level milliseconds).
 
 | | `gemini` (**default**) | `whisper` |
 |---|---|---|
-| Cost | Free (1,500 req/day) | Free |
-| Privacy | Sent to Google | Audio stays local |
 | Bengali accuracy | Excellent | Poor on phone audio |
 | Other languages | Good (100+ languages) | Good (99 languages) |
+| Cost | Free (1,500 req/day) | Free |
+| Privacy | Audio sent to Google | Audio stays local |
 | Timestamps | Approximate (MM:SS) | Word-level (ms) |
 | Offline | No | Yes |
-| GPU acceleration | N/A | Yes (`--device cuda`) |
-| API key required | Yes (free at [aistudio.google.com](https://aistudio.google.com)) | No |
-
-**Switch to Whisper** (`--engine whisper`) only when audio must not leave your
-servers, you're running offline, or you need millisecond-precise word timestamps.
-
----
-
-## Accuracy & tuning (Whisper)
-
-**Use `large-v3`.** It is dramatically more accurate and more noise-robust for
-non-English languages than `medium`/`small`, and in int8 it only needs ~3 GB
-RAM. This is the single biggest factor in Whisper transcript quality.
-
-### The repetition-loop trap
-
-On low-quality phone audio, default Whisper settings frequently fall into a
-**repetition loop** — emitting one token thousands of times
-(e.g. `বববববব…` or `yeahyeahyeah…`) *with high reported confidence*. Naïve
-quality checks that only look at `avg_logprob` will call this "excellent".
-
-This pipeline prevents it by default (`transcribe/engine.py`):
-
-- `condition_on_previous_text=False` — stops the model feeding its own
-  repetitions back as context (the main cause of lock-in).
-- `no_repeat_ngram_size=3`, `repetition_penalty=1.1` — block token/n-gram loops.
-- `temperature=[0.0, 0.2, … 1.0]` — retry a bad chunk at higher temperature
-  instead of committing to garbage.
-- `compression_ratio_threshold=2.4`, `log_prob_threshold=-1.0`,
-  `no_speech_threshold=0.6` — reject looped/silent/low-probability output.
-- VAD `threshold=0.5` — trims non-speech without treating line noise as speech.
-
-`transcribe-check` reports a `Repetition loops` count that should be **0**.
-
-### Getting the best Whisper results
-
-- **Force the language** (`--language bn`) — avoids mis-detection on short or
-  noisy clips.
-- **Keep speaker separation on** for stereo recordings — per-channel
-  transcription is much cleaner than a mixed-down mono track.
-- **Source quality matters most.** 8 kHz / low-bitrate recordings cap achievable
-  accuracy regardless of settings. If you control the recorder, capture at a
-  higher bitrate.
-
----
-
-## Google Gemini backend
-
-### Setup
-
-```bash
-pip install ".[gemini]"
-export GOOGLE_API_KEY=your_key_here   # free key at https://aistudio.google.com
-```
-
-### Usage
-
-```bash
-# Single file — Bengali call recording
-transcribe --file call.wav --engine gemini --language bn --labels "Agent,Customer"
-
-# Batch — last 7 days of recordings
-transcribe --input /recordings --engine gemini \
-    --language bn --labels "Agent,Customer" --days 7
-```
-
-### Notes
-
-- The model used is `gemini-2.5-flash` by default.
-- Audio is uploaded to Google's servers — do not use for recordings subject to
-  strict data-residency requirements.
-- Free tier: 1,500 requests/day, 15 requests/minute. A typical 2–3 minute call
-  costs ~150 audio tokens, well within the daily limit for most call centres.
-- Timestamps in `.srt` output are the model's best-effort `[MM:SS]` estimates,
-  not millisecond-accurate word timing.
-
----
-
-## GPU usage (Whisper)
-
-If you have an NVIDIA GPU with CUDA and cuDNN available, `--device auto` (the
-default) will use it automatically. To force it:
-
-```bash
-transcribe --file call.wav --device cuda --compute-type float16
-```
+| API key | Yes (free) | No |
 
 ---
 
 ## Troubleshooting
 
-| Symptom | Likely cause / fix |
+| Symptom | Fix |
 |---|---|
-| Whisper output is one character/word repeated | Repetition loop — ensure you're on `large-v3`. Run `transcribe-check`. |
-| `0 segments` / empty Whisper transcript | Audio filtered as silence. Confirm the file has speech; preprocessing resamples to 16 kHz automatically. |
-| Gemini `429 RESOURCE_EXHAUSTED` | Free-tier daily limit reached, or the model version has no free quota. Try again the next day, or check [ai.dev/rate-limit](https://ai.dev/rate-limit). |
-| Wrong language detected | Force it: `--language <code>`. |
-| `ffmpeg: command not found` | Install ffmpeg via your OS package manager. |
-| Stereo not separated (Whisper) | The file may be mono, or you passed `--no-separate-speakers`. |
-| Slow on CPU (Whisper) | Expected (~0.5–1× realtime for large-v3). Use a smaller model or a GPU. |
-| Low confidence but readable (Whisper) | Usually genuine poor source audio; large-v3 is near the ceiling for it. |
+| Gemini `429 RESOURCE_EXHAUSTED` | Free-tier daily limit hit. Wait until the next day or check [ai.dev/rate-limit](https://ai.dev/rate-limit). |
+| Empty or garbled transcript | Confirm the file has speech. Try `--language bn` to force language detection. |
+| Wrong speaker labels | Adjust `--labels "Agent,Customer"` to match your recording convention. |
+| `ffmpeg: command not found` | Install via your OS package manager (`apt`/`brew`/`choco`). |
+| Whisper repetition loop | Use `--engine gemini` instead, or run `transcribe-check` to diagnose. |
 
 ---
 
@@ -391,20 +280,19 @@ transcribe --file call.wav --device cuda --compute-type float16
 ```
 call-intelligence-pipeline/
 ├── transcribe/
-│   ├── engine.py           # faster-whisper wrapper + anti-repetition decoding
-│   ├── audio.py            # ffmpeg preprocessing & stereo channel splitting
+│   ├── gemini_engine.py    # Google Gemini transcription backend (default)
+│   ├── analyze.py          # call quality analysis (score, sentiment, flags)
+│   ├── analyze_cli.py      # `transcribe-analyze` CLI
 │   ├── pipeline.py         # orchestration + JSON/TXT/SRT output
 │   ├── cli.py              # `transcribe` CLI
-│   ├── accuracy.py         # `transcribe-check` self-test (Whisper only)
-│   ├── gemini_engine.py    # Google Gemini Flash transcription backend
-│   ├── analyze.py          # call quality analysis (brand, resolution, score, flags)
-│   ├── analyze_cli.py      # `transcribe-analyze` CLI
+│   ├── audio.py            # ffmpeg preprocessing & stereo channel splitting
+│   ├── engine.py           # faster-whisper backend (offline fallback)
+│   ├── accuracy.py         # `transcribe-check` (Whisper self-test)
 │   └── config.py           # optional config.env loader
 ├── tests/                  # fast smoke tests (no model download required)
 ├── samples/                # put your own audio here (git-ignored)
 ├── setup.sh                # one-command installer (Debian/Ubuntu)
 ├── pyproject.toml
-├── requirements.txt
 ├── CONTRIBUTING.md
 └── LICENSE                 # MIT
 ```
@@ -413,26 +301,24 @@ call-intelligence-pipeline/
 
 ## Privacy
 
-Call recordings and transcripts can contain personal data.
+Call recordings can contain personal data.
 
-- Audio files and the `transcripts/` directory are **git-ignored** — never commit
-  real recordings to a public repository.
-- With `--engine whisper` (default), audio never leaves your machine.
-- With `--engine gemini`, audio is sent to Google's servers for processing.
+- Audio files and `transcripts/` are **git-ignored** — never commit real recordings.
+- With `--engine gemini` (default), audio is sent to Google's servers.
+- With `--engine whisper`, audio never leaves your machine — but Bengali accuracy
+  will be significantly lower.
 
 ---
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute. Whisper models and
-faster-whisper carry their own licenses. Use of the Gemini API is subject to
-[Google's Terms of Service](https://ai.google.dev/terms).
+[MIT](LICENSE) — free to use, modify, and distribute. Use of the Gemini API is
+subject to [Google's Terms of Service](https://ai.google.dev/terms).
 
 ---
 
 ## Acknowledgements
 
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (CTranslate2)
-- [OpenAI Whisper](https://github.com/openai/whisper)
 - [Google Gemini](https://ai.google.dev/)
+- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (offline fallback)
 - [ffmpeg](https://ffmpeg.org/)
