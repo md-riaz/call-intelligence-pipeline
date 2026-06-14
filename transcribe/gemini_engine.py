@@ -108,7 +108,7 @@ class GeminiTranscriber:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_id: str = "gemini-2.0-flash",
+        model_id: str = "gemini-2.5-flash",
     ):
         self.api_key = api_key or os.environ.get("GOOGLE_API_KEY", "")
         self.model_id = model_id
