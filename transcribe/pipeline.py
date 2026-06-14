@@ -68,7 +68,7 @@ class TranscriptionPipeline:
         speaker_labels: tuple = ("Speaker A", "Speaker B"),
         separate_speakers: bool = True,
         write_srt: bool = True,
-        engine: str = "whisper",
+        engine: str = "gemini",
         google_api_key: Optional[str] = None,
     ):
         self.output_dir = Path(output_dir)

@@ -5,13 +5,12 @@ speaker-labelled transcripts — in **any language**, from a single command.
 
 Two backends are available:
 
-- **Whisper** (`--engine whisper`, default) — runs entirely on your own hardware,
-  completely free, no API key. Best for privacy-sensitive deployments or offline
-  environments. Works well for English and many other languages; struggles with
-  Bengali on low-quality phone audio.
-- **Google Gemini** (`--engine gemini`) — sends audio to Google's API. Free tier
-  gives 1,500 requests/day via Google AI Studio. Produces **excellent Bengali
+- **Google Gemini** (`--engine gemini`, **default**) — sends audio to Google's API.
+  Free tier gives 1,500 requests/day via Google AI Studio. Produces **excellent Bengali
   transcriptions** from the same 8 kHz call recordings that trip up Whisper.
+- **Whisper** (`--engine whisper`) — runs entirely on your own hardware, completely
+  free, no API key. Best for privacy-sensitive deployments or offline environments.
+  Works well for English and many languages; struggles with Bengali on phone audio.
 
 > Works with recordings from **any** source — IP-PBX/SIP systems (FreeSWITCH,
 > Asterisk, FusionPBX, 3CX), softphones, mobile call recorders, Zoom/Meet
@@ -92,18 +91,17 @@ The Whisper model downloads automatically on first run (cached in
 ## Quick start
 
 ```bash
-# Sanity-check on one recording (Whisper — prints transcript + quality verdict)
-transcribe-check --file samples/your-call.wav
-
-# Transcribe with Whisper (local, free, auto-detects language)
-transcribe --file call.wav --output ./transcripts
-
-# Transcribe with Gemini (free API, recommended for Bengali)
-transcribe --file call.wav --engine gemini --language bn --labels "Agent,Customer"
+# Transcribe one Bengali call (Gemini is the default engine)
+transcribe --file call.wav --language bn --labels "Agent,Customer"
 
 # Batch a whole folder (recursive), only the last 7 days
-transcribe --input /path/to/recordings --engine gemini \
-    --language bn --labels "Agent,Customer" --days 7
+transcribe --input /path/to/recordings --language bn --labels "Agent,Customer" --days 7
+
+# Use local Whisper instead (no API key, audio stays on your machine)
+transcribe --file call.wav --engine whisper --language bn
+
+# Sanity-check Whisper quality on one recording
+transcribe-check --file samples/your-call.wav
 ```
 
 Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
@@ -119,7 +117,7 @@ Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
 | `--file, -f` | Transcribe a single audio file | — |
 | `--input, -i` | Transcribe a directory (recursive) | — |
 | `--output, -o` | Output directory | `./transcripts` |
-| `--engine` | `whisper` or `gemini` | `whisper` |
+| `--engine` | `gemini` or `whisper` | `gemini` |
 | `--language, -l` | Force an ISO code, or `auto` to detect | `auto` |
 | `--labels` | Comma-separated labels for stereo channels | `Speaker A,Speaker B` |
 | `--days, -d` | With `--input`: only files modified in last N days | all |
@@ -150,18 +148,19 @@ high-confidence success.
 ```python
 from transcribe import TranscriptionPipeline
 
-# Whisper (local)
+# Gemini (default — free cloud API, excellent Bengali accuracy)
 pipe = TranscriptionPipeline(
-    model_size="large-v3",
+    engine="gemini",
+    google_api_key="your_key",   # or set GOOGLE_API_KEY env var
     language="bn",
     speaker_labels=("Agent", "Customer"),
     output_dir="./transcripts",
 )
 
-# Gemini (free cloud API, better Bengali accuracy)
+# Whisper (local, offline, audio stays on your machine)
 pipe = TranscriptionPipeline(
-    engine="gemini",
-    google_api_key="your_key",   # or set GOOGLE_API_KEY env var
+    engine="whisper",
+    model_size="large-v3",
     language="bn",
     speaker_labels=("Agent", "Customer"),
     output_dir="./transcripts",
@@ -227,23 +226,19 @@ are approximate (`[MM:SS]` granularity rather than word-level milliseconds).
 
 ## Choosing a backend
 
-| | `whisper` (default) | `gemini` |
+| | `gemini` (**default**) | `whisper` |
 |---|---|---|
-| Cost | Free | Free (1,500 req/day) |
-| Privacy | Audio stays local | Sent to Google |
-| Bengali accuracy | Poor on phone audio | Excellent |
-| Other languages | Good (99 languages) | Good (100+ languages) |
-| Timestamps | Word-level (ms) | Approximate (MM:SS) |
-| Offline | Yes | No |
-| GPU acceleration | Yes (`--device cuda`) | N/A |
-| API key required | No | Yes (free at [aistudio.google.com](https://aistudio.google.com)) |
+| Cost | Free (1,500 req/day) | Free |
+| Privacy | Sent to Google | Audio stays local |
+| Bengali accuracy | Excellent | Poor on phone audio |
+| Other languages | Good (100+ languages) | Good (99 languages) |
+| Timestamps | Approximate (MM:SS) | Word-level (ms) |
+| Offline | No | Yes |
+| GPU acceleration | N/A | Yes (`--device cuda`) |
+| API key required | Yes (free at [aistudio.google.com](https://aistudio.google.com)) | No |
 
-**Use Gemini** when accuracy matters more than data locality — especially for
-Bengali, South Asian languages, or any low-resource language that Whisper
-struggles with on phone audio.
-
-**Use Whisper** when audio must not leave your servers, you're offline, or you
-need millisecond-precise word timestamps in the SRT output.
+**Switch to Whisper** (`--engine whisper`) only when audio must not leave your
+servers, you're running offline, or you need millisecond-precise word timestamps.
 
 ---
 

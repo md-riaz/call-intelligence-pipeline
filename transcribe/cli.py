@@ -61,10 +61,10 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--reprocess", action="store_true",
                     help="Re-transcribe files even if already in processed_files.json")
     ap.add_argument(
-        "--engine", default="whisper", choices=["whisper", "gemini"],
-        help="Transcription backend. 'whisper' = local/free (default). "
-        "'gemini' = Google Gemini Flash API (free tier: 1500 req/day, excellent Bengali accuracy). "
-        "Requires GOOGLE_API_KEY env var or --google-api-key.",
+        "--engine", default="gemini", choices=["whisper", "gemini"],
+        help="Transcription backend. 'gemini' = Google Gemini Flash API, free tier, "
+        "excellent Bengali accuracy (default). Requires GOOGLE_API_KEY env var or "
+        "--google-api-key. 'whisper' = local faster-whisper, fully offline/private.",
     )
     ap.add_argument("--google-api-key", default=None,
                     help="Google AI Studio API key for Gemini (overrides GOOGLE_API_KEY env var). "
