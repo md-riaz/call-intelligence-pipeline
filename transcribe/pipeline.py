@@ -1,6 +1,17 @@
 """
 Transcription pipeline: orchestrates preprocessing, optional stereo speaker
 separation, transcription, and output writing (JSON + TXT + SRT).
+
+Two transcription backends are supported:
+
+  whisper (default) — runs locally via faster-whisper. Free, private, works
+      offline. Use large-v3 for best accuracy. Adequate for most languages but
+      noticeably weaker on Bengali phone audio compared to Scribe.
+
+  elevenlabs — sends audio to ElevenLabs Scribe v2 API. ~$0.22/hour, requires
+      an API key, audio leaves your servers. Significantly more accurate on
+      Bengali (and most non-English languages) on real phone recordings.
+      Handles stereo diarization natively — no manual channel splitting needed.
 """
 
 from __future__ import annotations
@@ -9,7 +20,7 @@ import json
 import logging
 import os
 import time
-from dataclasses import asdict, dataclass, field
+from dataclasses import asdict, dataclass
 from datetime import datetime
 from pathlib import Path
 from typing import Optional
@@ -58,6 +69,8 @@ class TranscriptionPipeline:
         speaker_labels: tuple = ("Speaker A", "Speaker B"),
         separate_speakers: bool = True,
         write_srt: bool = True,
+        engine: str = "whisper",
+        elevenlabs_api_key: Optional[str] = None,
     ):
         self.output_dir = Path(output_dir)
         self.temp_dir = Path(temp_dir or output_dir) / "_temp"
@@ -67,9 +80,20 @@ class TranscriptionPipeline:
         self.speaker_labels = speaker_labels
         self.separate_speakers = separate_speakers
         self.write_srt = write_srt
-        self.transcriber = WhisperTranscriber(
-            model_size=model_size, device=device, compute_type=compute_type
-        )
+        self.engine = engine.lower()
+
+        if self.engine == "elevenlabs":
+            from .elevenlabs_engine import ElevenLabsTranscriber
+            self.transcriber = ElevenLabsTranscriber(api_key=elevenlabs_api_key)
+            self._model_label = "elevenlabs/scribe_v2"
+        elif self.engine == "whisper":
+            self.transcriber = WhisperTranscriber(
+                model_size=model_size, device=device, compute_type=compute_type
+            )
+            self._model_label = f"whisper/{model_size}"
+        else:
+            raise ValueError(f"Unknown engine '{engine}'. Choose 'whisper' or 'elevenlabs'.")
+
         self.processed_log = self.output_dir / "processed_files.json"
         self.processed = self._load_processed()
 
@@ -112,30 +136,47 @@ class TranscriptionPipeline:
                 os.path.getmtime(str(audio_path))
             ).strftime("%Y-%m-%d %H:%M:%S")
 
-            is_stereo = StereoSplitter.is_stereo(str(audio_path))
-            do_split = is_stereo and self.separate_speakers
-
-            if do_split:
-                log.info("  Stereo recording — separating speakers")
-                left_wav, right_wav = StereoSplitter.split(
-                    str(audio_path), str(self.temp_dir)
+            if self.engine == "elevenlabs":
+                # ElevenLabs handles stereo diarization natively — send the
+                # original file directly, no manual channel splitting needed.
+                log.info("  Engine: ElevenLabs Scribe")
+                r = self.transcriber.transcribe(
+                    str(audio_path),
+                    language=self.language,
+                    speaker_labels=self.speaker_labels,
+                    diarize=self.separate_speakers,
                 )
-                lr = self.transcriber.transcribe(left_wav, language=self.language)
-                rr = self.transcriber.transcribe(right_wav, language=self.language)
-                segs = StereoSplitter.merge(
-                    lr["segments"], rr["segments"], labels=self.speaker_labels
-                )
-                full_text = self._labeled_text(segs)
-                duration = max(lr["duration_seconds"], rr["duration_seconds"])
-                lang, lang_conf = lr["language_detected"], lr["language_confidence"]
-            else:
-                log.info("  %s recording", "Stereo (mixed)" if is_stereo else "Mono")
-                wav = AudioPreprocessor.convert(str(audio_path), str(self.temp_dir))
-                r = self.transcriber.transcribe(wav, language=self.language)
-                segs = [{**s, "speaker": ""} for s in r["segments"]]
+                segs = r["segments"]
                 full_text = r["full_text"]
                 duration = r["duration_seconds"]
                 lang, lang_conf = r["language_detected"], r["language_confidence"]
+                do_split = r["speakers_separated"]
+            else:
+                # Whisper path: manually split stereo → transcribe each channel.
+                is_stereo = StereoSplitter.is_stereo(str(audio_path))
+                do_split = is_stereo and self.separate_speakers
+
+                if do_split:
+                    log.info("  Stereo recording — separating speakers")
+                    left_wav, right_wav = StereoSplitter.split(
+                        str(audio_path), str(self.temp_dir)
+                    )
+                    lr = self.transcriber.transcribe(left_wav, language=self.language)
+                    rr = self.transcriber.transcribe(right_wav, language=self.language)
+                    segs = StereoSplitter.merge(
+                        lr["segments"], rr["segments"], labels=self.speaker_labels
+                    )
+                    full_text = self._labeled_text(segs)
+                    duration = max(lr["duration_seconds"], rr["duration_seconds"])
+                    lang, lang_conf = lr["language_detected"], lr["language_confidence"]
+                else:
+                    log.info("  %s recording", "Stereo (mixed)" if is_stereo else "Mono")
+                    wav = AudioPreprocessor.convert(str(audio_path), str(self.temp_dir))
+                    r = self.transcriber.transcribe(wav, language=self.language)
+                    segs = [{**s, "speaker": ""} for s in r["segments"]]
+                    full_text = r["full_text"]
+                    duration = r["duration_seconds"]
+                    lang, lang_conf = r["language_detected"], r["language_confidence"]
 
             transcript = CallTranscript(
                 call_id=call_id, filename=audio_path.name, date=file_date,
@@ -143,7 +184,7 @@ class TranscriptionPipeline:
                 language_confidence=lang_conf, segments=segs, full_text=full_text,
                 word_count=len(full_text.split()),
                 processing_time_seconds=round(time.time() - t0, 2),
-                model_used=self.transcriber.model_size, status="success",
+                model_used=self._model_label, status="success",
                 speakers_separated=do_split,
             )
             self._save_outputs(transcript)
@@ -168,7 +209,7 @@ class TranscriptionPipeline:
             call_id=call_id, filename=filename, date="", duration_seconds=0,
             language_detected="", language_confidence=0, segments=[], full_text="",
             word_count=0, processing_time_seconds=proc_time,
-            model_used=self.transcriber.model_size, status=status, error=error,
+            model_used=self._model_label, status=status, error=error,
         )
 
     # --- output --------------------------------------------------------------

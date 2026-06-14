@@ -22,6 +22,9 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# ElevenLabs Scribe backend — dramatically better accuracy on Bengali and other
+# non-English languages. Required only when using --engine elevenlabs.
+elevenlabs = ["elevenlabs>=2.0.0"]
 # Extras used by reporting/export helpers; not required for core transcription.
 reports = ["pandas", "openpyxl", "jinja2"]
 dev = ["pytest", "ruff"]

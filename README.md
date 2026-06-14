@@ -227,6 +227,67 @@ This pipeline prevents it by default (`transcribe/engine.py`):
 
 ---
 
+## ElevenLabs Scribe backend (recommended for Bengali)
+
+The default Whisper `large-v3` backend works well for many languages but
+struggles on Bengali phone audio. ElevenLabs Scribe v2 is significantly more
+accurate on real call recordings — tested side-by-side on the same 8 kHz call
+it produced fully readable Bengali text vs fragmented output from Whisper.
+
+**Cost:** ~$0.22/hour of audio (~$0.009 per 2.5-minute call).
+**Privacy:** audio is uploaded to ElevenLabs' servers.
+
+### Setup
+
+```bash
+pip install ".[elevenlabs]"
+export ELEVENLABS_API_KEY=your_key_here   # get it at elevenlabs.io
+```
+
+### Usage
+
+```bash
+# Single file
+transcribe --file call.wav --engine elevenlabs --language ben
+
+# Batch
+transcribe --input /path/to/recordings --engine elevenlabs \
+    --language ben --labels "Agent,Customer"
+```
+
+Or via the Python API:
+
+```python
+from transcribe import TranscriptionPipeline
+
+pipe = TranscriptionPipeline(
+    engine="elevenlabs",
+    elevenlabs_api_key="your_key",   # or set ELEVENLABS_API_KEY
+    language="ben",
+    speaker_labels=("Agent", "Customer"),
+    output_dir="./transcripts",
+)
+result = pipe.process_file("call.wav")
+print(result.full_text)
+```
+
+ElevenLabs handles stereo diarization natively — no manual channel splitting
+needed. The `--labels` / `speaker_labels` argument maps ElevenLabs' internal
+`speaker_0`/`speaker_1` to your preferred names.
+
+### Choosing a backend
+
+| | `whisper` (default) | `elevenlabs` |
+|---|---|---|
+| Cost | Free | ~$0.22/hr |
+| Privacy | Audio stays local | Sent to ElevenLabs |
+| Bengali accuracy | Poor on phone audio | Excellent |
+| Other languages | Good (99 languages) | Good (90+ languages) |
+| Offline | Yes | No |
+| GPU acceleration | Yes (`--device cuda`) | N/A (cloud) |
+
+---
+
 ## GPU usage
 
 If you have an NVIDIA GPU with CUDA and cuDNN available, `--device auto` (the

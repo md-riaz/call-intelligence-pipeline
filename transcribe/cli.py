@@ -60,6 +60,15 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--no-srt", action="store_true", help="Do not write .srt subtitles")
     ap.add_argument("--reprocess", action="store_true",
                     help="Re-transcribe files even if already in processed_files.json")
+    ap.add_argument(
+        "--engine", default="whisper", choices=["whisper", "elevenlabs"],
+        help="Transcription backend. 'whisper' = local/free (default). "
+        "'elevenlabs' = ElevenLabs Scribe API (~$0.22/hr, much better accuracy "
+        "on Bengali and other non-English languages). Requires ELEVENLABS_API_KEY "
+        "env var or --elevenlabs-api-key.",
+    )
+    ap.add_argument("--elevenlabs-api-key", default=None,
+                    help="ElevenLabs API key (overrides ELEVENLABS_API_KEY env var)")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return ap
 
@@ -75,8 +84,8 @@ def main(argv=None) -> int:
     labels = tuple((args.labels.split(",", 1) + ["Speaker B"])[:2])
 
     log.info(
-        "audio-transcription-pipeline %s | model=%s | lang=%s | device=%s",
-        __version__, model, language or "auto", args.device,
+        "audio-transcription-pipeline %s | engine=%s | model=%s | lang=%s | device=%s",
+        __version__, args.engine, model, language or "auto", args.device,
     )
 
     pipeline = TranscriptionPipeline(
@@ -88,6 +97,8 @@ def main(argv=None) -> int:
         speaker_labels=labels,
         separate_speakers=not args.no_separate_speakers,
         write_srt=not args.no_srt,
+        engine=args.engine,
+        elevenlabs_api_key=args.elevenlabs_api_key,
     )
 
     if args.file:

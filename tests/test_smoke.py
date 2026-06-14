@@ -39,8 +39,33 @@ def test_cli_parses_file_arg():
     assert args.language == "bn"
 
 
+def test_cli_parses_elevenlabs_engine():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--engine", "elevenlabs", "--language", "ben"]
+    )
+    assert args.engine == "elevenlabs"
+    assert args.language == "ben"
+
+
 def test_cli_requires_a_source():
     import pytest
 
     with pytest.raises(SystemExit):
         build_parser().parse_args([])
+
+
+def test_elevenlabs_word_grouping():
+    from transcribe.elevenlabs_engine import _words_to_segments
+
+    words = [
+        {"text": "hello", "start": 0.1, "end": 0.4, "speaker_id": "speaker_0", "type": "word"},
+        {"text": "world", "start": 0.5, "end": 0.9, "speaker_id": "speaker_0", "type": "word"},
+        {"text": "hi",    "start": 3.5, "end": 4.0, "speaker_id": "speaker_1", "type": "word"},
+        {"text": "ok",    "start": 6.5, "end": 6.8, "speaker_id": "speaker_0", "type": "word"},
+    ]
+    segs, text = _words_to_segments(words, ("Agent", "Customer"))
+    assert len(segs) == 3
+    assert segs[0]["speaker"] == "Agent"
+    assert segs[1]["speaker"] == "Customer"
+    assert segs[2]["speaker"] == "Agent"
+    assert "hello world" in segs[0]["text"]
