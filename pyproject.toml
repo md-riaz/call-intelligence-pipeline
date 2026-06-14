@@ -32,6 +32,7 @@ dev = ["pytest", "ruff"]
 [project.scripts]
 transcribe = "transcribe.cli:main"
 transcribe-check = "transcribe.accuracy:main"
+transcribe-analyze = "transcribe.analyze_cli:main"
 
 [project.urls]
 Homepage = "https://github.com/your-org/audio-transcription-pipeline"

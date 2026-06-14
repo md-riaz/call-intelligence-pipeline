@@ -37,7 +37,7 @@ Two backends are available:
   and confidence), `.txt` (human-readable), and `.srt` (subtitles).
 - **CPU or GPU** — Whisper runs on a small VPS (large-v3 int8 ≈ 3 GB RAM) or
   accelerates on CUDA automatically.
-- **Installable CLI** — `transcribe` and `transcribe-check`, plus a Python API.
+- **Installable CLI** — `transcribe`, `transcribe-analyze`, and `transcribe-check`, plus a Python API.
 
 ---
 
@@ -91,17 +91,18 @@ The Whisper model downloads automatically on first run (cached in
 ## Quick start
 
 ```bash
-# Transcribe one Bengali call (Gemini is the default engine)
+# 1. Transcribe — Bengali call recording (Gemini is the default engine)
 transcribe --file call.wav --language bn --labels "Agent,Customer"
 
-# Batch a whole folder (recursive), only the last 7 days
-transcribe --input /path/to/recordings --language bn --labels "Agent,Customer" --days 7
+# 2. Analyze — score the transcript for quality, sentiment, and flags
+transcribe-analyze --file transcripts/call.json
+
+# Batch: transcribe then analyze an entire folder
+transcribe --input /recordings --language bn --labels "Agent,Customer" --days 7
+transcribe-analyze --input transcripts/    # writes analysis_summary.csv
 
 # Use local Whisper instead (no API key, audio stays on your machine)
 transcribe --file call.wav --engine whisper --language bn
-
-# Sanity-check Whisper quality on one recording
-transcribe-check --file samples/your-call.wav
 ```
 
 Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
@@ -130,6 +131,53 @@ Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
 | `--reprocess` | Re-transcribe files even if already done | off |
 
 (`--file` and `--input` are mutually exclusive; one is required.)
+
+### `transcribe-analyze` — call quality analysis
+
+Reads transcript `.json` files and scores them with Gemini. Appends an
+`analysis` block to each JSON in-place and writes `analysis_summary.csv`
+for management review.
+
+```bash
+# Analyze one transcript
+transcribe-analyze --file transcripts/call.json
+
+# Analyze a whole folder, regenerate summary CSV
+transcribe-analyze --input transcripts/
+
+# Re-score everything (e.g. after updating the rubric)
+transcribe-analyze --input transcripts/ --reanalyze
+```
+
+| Option | Description |
+|---|---|
+| `--file, -f` | Single transcript `.json` to analyze |
+| `--input, -i` | Directory of transcript `.json` files |
+| `--google-api-key` | Overrides `GOOGLE_API_KEY` env var |
+| `--reanalyze` | Re-analyze files that already have a score |
+| `--no-csv` | Skip writing `analysis_summary.csv` |
+
+Each analyzed file gets an `analysis` block added to its JSON:
+
+```json
+"analysis": {
+  "brand": "pbx.bd",
+  "issue_category": "billing",
+  "issue_summary": "Customer requested a BDT 4000 invoice for manual recharge.",
+  "resolution": "partial",
+  "customer_sentiment": "frustrated",
+  "sentiment_score": 2,
+  "agent_score": 75,
+  "agent_flags": ["slow response on urgent request"],
+  "strengths": ["polite throughout", "confirmed phone number back to customer"],
+  "coaching_tip": "Acknowledge recurring issues and provide a timeline or escalation path."
+}
+```
+
+The `analysis_summary.csv` has one row per call — import into Excel or any
+BI tool for agent scorecards and trend analysis.
+
+---
 
 ### `transcribe-check` — self-test (Whisper only)
 
@@ -348,7 +396,9 @@ audio-transcription-pipeline/
 │   ├── pipeline.py         # orchestration + JSON/TXT/SRT output
 │   ├── cli.py              # `transcribe` CLI
 │   ├── accuracy.py         # `transcribe-check` self-test (Whisper only)
-│   ├── gemini_engine.py    # Google Gemini Flash backend
+│   ├── gemini_engine.py    # Google Gemini Flash transcription backend
+│   ├── analyze.py          # call quality analysis (brand, resolution, score, flags)
+│   ├── analyze_cli.py      # `transcribe-analyze` CLI
 │   └── config.py           # optional config.env loader
 ├── tests/                  # fast smoke tests (no model download required)
 ├── samples/                # put your own audio here (git-ignored)

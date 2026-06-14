@@ -7,6 +7,7 @@ helpers behave. Run with: pytest
 from transcribe import __version__
 from transcribe.audio import AudioPreprocessor, StereoSplitter
 from transcribe.cli import build_parser
+from transcribe.analyze_cli import build_parser as build_analyze_parser
 from transcribe.pipeline import _srt_timestamp
 
 
@@ -52,5 +53,27 @@ def test_cli_requires_a_source():
 
     with pytest.raises(SystemExit):
         build_parser().parse_args([])
+
+
+def test_analyze_cli_parses_file_arg():
+    args = build_analyze_parser().parse_args(["--file", "transcripts/call.json"])
+    assert args.file == "transcripts/call.json"
+    assert not args.reanalyze
+
+
+def test_analyze_cli_parses_batch_args():
+    args = build_analyze_parser().parse_args(
+        ["--input", "transcripts/", "--reanalyze", "--no-csv"]
+    )
+    assert args.input == "transcripts/"
+    assert args.reanalyze
+    assert args.no_csv
+
+
+def test_analyze_csv_columns():
+    from transcribe.analyze import _CSV_COLUMNS
+    required = {"call_id", "brand", "issue_category", "resolution",
+                "agent_score", "customer_sentiment", "coaching_tip"}
+    assert required.issubset(set(_CSV_COLUMNS))
 
 
