@@ -1,7 +1,7 @@
-# audio-transcription-pipeline
+# call-intelligence-pipeline
 
-Turn **audio call recordings** (or any speech audio) into accurate,
-speaker-labelled transcripts — in **any language**, from a single command.
+Turn **call recordings** into transcripts, quality scores, and agent coaching insights —
+in **any language**, from a single command.
 
 Two backends are available:
 
@@ -55,7 +55,7 @@ Two backends are available:
 ### Option A — one command (fresh Debian/Ubuntu host)
 
 ```bash
-git clone https://github.com/your-org/audio-transcription-pipeline.git
+git clone https://github.com/md-riaz/call-intelligence-pipeline.git
 cd audio-transcription-pipeline
 bash setup.sh
 ```
@@ -72,7 +72,7 @@ recommends a Whisper model based on available RAM, and offers to download it.
 #    Linux:   sudo apt install ffmpeg
 
 # 2. Clone and install
-git clone https://github.com/your-org/audio-transcription-pipeline.git
+git clone https://github.com/md-riaz/call-intelligence-pipeline.git
 cd audio-transcription-pipeline
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
@@ -389,7 +389,7 @@ transcribe --file call.wav --device cuda --compute-type float16
 ## Project structure
 
 ```
-audio-transcription-pipeline/
+call-intelligence-pipeline/
 ├── transcribe/
 │   ├── engine.py           # faster-whisper wrapper + anti-repetition decoding
 │   ├── audio.py            # ffmpeg preprocessing & stereo channel splitting

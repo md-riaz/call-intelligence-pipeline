@@ -3,14 +3,14 @@ requires = ["setuptools>=64", "wheel"]
 build-backend = "setuptools.build_meta"
 
 [project]
-name = "audio-transcription-pipeline"
+name = "call-intelligence-pipeline"
 version = "1.0.0"
-description = "General-purpose audio call recording → speaker-labelled transcript pipeline, built on faster-whisper."
+description = "Transcribe call recordings and analyze quality — speaker separation, sentiment, FCR, agent scoring, and coaching tips."
 readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
-authors = [{ name = "audio-transcription-pipeline contributors" }]
-keywords = ["whisper", "transcription", "speech-to-text", "asr", "call-recording", "diarization"]
+authors = [{ name = "call-intelligence-pipeline contributors" }]
+keywords = ["call-center", "speech-to-text", "asr", "call-quality", "qa", "transcription", "sentiment", "gemini", "whisper"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -35,8 +35,8 @@ transcribe-check = "transcribe.accuracy:main"
 transcribe-analyze = "transcribe.analyze_cli:main"
 
 [project.urls]
-Homepage = "https://github.com/your-org/audio-transcription-pipeline"
-Issues = "https://github.com/your-org/audio-transcription-pipeline/issues"
+Homepage = "https://github.com/md-riaz/call-intelligence-pipeline"
+Issues = "https://github.com/md-riaz/call-intelligence-pipeline/issues"
 
 [tool.setuptools]
 packages = ["transcribe"]
