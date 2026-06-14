@@ -2,20 +2,15 @@
 Transcription pipeline: orchestrates preprocessing, optional stereo speaker
 separation, transcription, and output writing (JSON + TXT + SRT).
 
-Three transcription backends are supported:
+Two transcription backends are supported:
 
   whisper (default) — runs locally via faster-whisper. Free, private, works
       offline. Use large-v3 for best accuracy. Adequate for most languages but
-      noticeably weaker on Bengali phone audio compared to Scribe.
-
-  elevenlabs — sends audio to ElevenLabs Scribe v2 API. ~$0.22/hour, requires
-      an API key, audio leaves your servers. Significantly more accurate on
-      Bengali (and most non-English languages) on real phone recordings.
-      Handles stereo diarization natively — no manual channel splitting needed.
+      noticeably weaker on Bengali phone audio compared to cloud backends.
 
   gemini — sends audio to Google Gemini Flash API. Free tier: 1,500 req/day.
       Requires a free API key from aistudio.google.com. Audio sent to Google.
-      Very strong on Bengali; also handles stereo natively via structured prompts.
+      Very strong on Bengali; handles stereo natively via structured prompts.
 """
 
 from __future__ import annotations
@@ -74,7 +69,6 @@ class TranscriptionPipeline:
         separate_speakers: bool = True,
         write_srt: bool = True,
         engine: str = "whisper",
-        elevenlabs_api_key: Optional[str] = None,
         google_api_key: Optional[str] = None,
     ):
         self.output_dir = Path(output_dir)
@@ -87,11 +81,7 @@ class TranscriptionPipeline:
         self.write_srt = write_srt
         self.engine = engine.lower()
 
-        if self.engine == "elevenlabs":
-            from .elevenlabs_engine import ElevenLabsTranscriber
-            self.transcriber = ElevenLabsTranscriber(api_key=elevenlabs_api_key)
-            self._model_label = "elevenlabs/scribe_v2"
-        elif self.engine == "gemini":
+        if self.engine == "gemini":
             from .gemini_engine import GeminiTranscriber
             self.transcriber = GeminiTranscriber(api_key=google_api_key)
             self._model_label = f"gemini/{self.transcriber.model_id}"
@@ -102,7 +92,7 @@ class TranscriptionPipeline:
             self._model_label = f"whisper/{model_size}"
         else:
             raise ValueError(
-                f"Unknown engine '{engine}'. Choose 'whisper', 'elevenlabs', or 'gemini'."
+                f"Unknown engine '{engine}'. Choose 'whisper' or 'gemini'."
             )
 
         self.processed_log = self.output_dir / "processed_files.json"
@@ -147,15 +137,14 @@ class TranscriptionPipeline:
                 os.path.getmtime(str(audio_path))
             ).strftime("%Y-%m-%d %H:%M:%S")
 
-            if self.engine in ("elevenlabs", "gemini"):
+            if self.engine == "gemini":
                 # Cloud engines handle stereo diarization natively — send the
                 # original file directly, no manual channel splitting needed.
-                log.info("  Engine: %s", self.engine)
+                log.info("  Engine: Gemini")
                 r = self.transcriber.transcribe(
                     str(audio_path),
                     language=self.language,
                     speaker_labels=self.speaker_labels,
-                    diarize=self.separate_speakers,
                 )
                 segs = r["segments"]
                 full_text = r["full_text"]

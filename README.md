@@ -235,7 +235,7 @@ transcriptions because Google's models have extensive South Asian language train
 
 **Cost:** Free tier — 1,500 requests/day, 15 requests/minute.
 **Privacy:** Audio is sent to Google's servers.
-**Accuracy:** Excellent for Bengali; comparable to ElevenLabs on most calls.
+**Accuracy:** Excellent for Bengali.
 
 ### Setup
 
@@ -275,71 +275,20 @@ Gemini handles stereo calls natively via structured prompting — no manual chan
 splitting needed. Timestamps in the output are approximate (Gemini does not return
 word-level timing), so SRT files use the model's best-effort `[MM:SS]` estimates.
 
----
-
-## ElevenLabs Scribe backend (recommended for Bengali)
-
-The default Whisper `large-v3` backend works well for many languages but
-struggles on Bengali phone audio. ElevenLabs Scribe v2 is significantly more
-accurate on real call recordings — tested side-by-side on the same 8 kHz call
-it produced fully readable Bengali text vs fragmented output from Whisper.
-
-**Cost:** ~$0.22/hour of audio (~$0.009 per 2.5-minute call).
-**Privacy:** audio is uploaded to ElevenLabs' servers.
-
-### Setup
-
-```bash
-pip install ".[elevenlabs]"
-export ELEVENLABS_API_KEY=your_key_here   # get it at elevenlabs.io
-```
-
-### Usage
-
-```bash
-# Single file
-transcribe --file call.wav --engine elevenlabs --language ben
-
-# Batch
-transcribe --input /path/to/recordings --engine elevenlabs \
-    --language ben --labels "Agent,Customer"
-```
-
-Or via the Python API:
-
-```python
-from transcribe import TranscriptionPipeline
-
-pipe = TranscriptionPipeline(
-    engine="elevenlabs",
-    elevenlabs_api_key="your_key",   # or set ELEVENLABS_API_KEY
-    language="ben",
-    speaker_labels=("Agent", "Customer"),
-    output_dir="./transcripts",
-)
-result = pipe.process_file("call.wav")
-print(result.full_text)
-```
-
-ElevenLabs handles stereo diarization natively — no manual channel splitting
-needed. The `--labels` / `speaker_labels` argument maps ElevenLabs' internal
-`speaker_0`/`speaker_1` to your preferred names.
-
 ### Choosing a backend
 
-| | `whisper` (default) | `gemini` | `elevenlabs` |
-|---|---|---|---|
-| Cost | Free | Free (1,500 req/day) | ~$0.22/hr |
-| Privacy | Audio stays local | Sent to Google | Sent to ElevenLabs |
-| Bengali accuracy | Poor on phone audio | Excellent | Excellent |
-| Other languages | Good (99 languages) | Good (100+ languages) | Good (90+ languages) |
-| Timestamps | Word-level | Approximate (MM:SS) | Word-level |
-| Offline | Yes | No | No |
-| GPU acceleration | Yes (`--device cuda`) | N/A | N/A |
+| | `whisper` (default) | `gemini` |
+|---|---|---|
+| Cost | Free | Free (1,500 req/day) |
+| Privacy | Audio stays local | Sent to Google |
+| Bengali accuracy | Poor on phone audio | Excellent |
+| Other languages | Good (99 languages) | Good (100+ languages) |
+| Timestamps | Word-level | Approximate (MM:SS) |
+| Offline | Yes | No |
+| GPU acceleration | Yes (`--device cuda`) | N/A |
 
-**Recommendation:** Start with `--engine gemini` for Bengali — it's free and significantly
-better than Whisper. Upgrade to `--engine elevenlabs` only if you need precise word-level
-timestamps in the SRT output or prefer ElevenLabs' diarization.
+**Recommendation:** Use `--engine gemini` for Bengali — it's free and significantly better
+than Whisper on phone audio.
 
 ---
 
@@ -378,7 +327,6 @@ audio-transcription-pipeline/
 │   ├── pipeline.py         # orchestration + JSON/TXT/SRT output
 │   ├── cli.py              # `transcribe` CLI
 │   ├── accuracy.py         # `transcribe-check` self-test
-│   ├── elevenlabs_engine.py # ElevenLabs Scribe backend
 │   ├── gemini_engine.py    # Google Gemini Flash backend
 │   └── config.py           # optional config.env loader
 ├── tests/             # fast smoke tests (no model download)

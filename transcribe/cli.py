@@ -61,15 +61,11 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--reprocess", action="store_true",
                     help="Re-transcribe files even if already in processed_files.json")
     ap.add_argument(
-        "--engine", default="whisper", choices=["whisper", "elevenlabs", "gemini"],
+        "--engine", default="whisper", choices=["whisper", "gemini"],
         help="Transcription backend. 'whisper' = local/free (default). "
-        "'elevenlabs' = ElevenLabs Scribe API (~$0.22/hr). "
-        "'gemini' = Google Gemini Flash API (free tier: 1500 req/day). "
-        "Both cloud engines have excellent Bengali accuracy. "
-        "ElevenLabs needs ELEVENLABS_API_KEY; Gemini needs GOOGLE_API_KEY.",
+        "'gemini' = Google Gemini Flash API (free tier: 1500 req/day, excellent Bengali accuracy). "
+        "Requires GOOGLE_API_KEY env var or --google-api-key.",
     )
-    ap.add_argument("--elevenlabs-api-key", default=None,
-                    help="ElevenLabs API key (overrides ELEVENLABS_API_KEY env var)")
     ap.add_argument("--google-api-key", default=None,
                     help="Google AI Studio API key for Gemini (overrides GOOGLE_API_KEY env var). "
                     "Get a free key at https://aistudio.google.com")
@@ -102,7 +98,6 @@ def main(argv=None) -> int:
         separate_speakers=not args.no_separate_speakers,
         write_srt=not args.no_srt,
         engine=args.engine,
-        elevenlabs_api_key=args.elevenlabs_api_key,
         google_api_key=args.google_api_key,
     )
 
