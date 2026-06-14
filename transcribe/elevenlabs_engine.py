@@ -129,13 +129,11 @@ class ElevenLabsTranscriber:
                 # ISO-639-3 code or None for auto-detect.
                 # Scribe auto-detects reliably; forcing helps on very short clips.
                 language_code=language,
-                diarize=diarize,
-                # Let Scribe attempt automatic agent/customer role labelling.
-                # Falls back to speaker_0/speaker_1 if it can't determine roles.
-                detect_speaker_roles=diarize,
-                # Send stereo files as two independent channels; Scribe handles
-                # the per-channel transcription and merges them.
+                # use_multi_channel assigns speakers by L/R channel, which is
+                # mutually exclusive with ML-based diarization per the API spec.
                 use_multi_channel=True,
+                diarize=False,
+                detect_speaker_roles=False,
                 tag_audio_events=False,
             )
 
