@@ -27,23 +27,8 @@ from typing import Optional
 
 log = logging.getLogger(__name__)
 
-# Company context injected into every analysis prompt.
-_COMPANY_CONTEXT = """\
-Alpha.net.bd is a Bangladeshi technology company with these service brands:
-- pbx.bd / Alpha PBX  — cloud PBX, VoIP, call centre solutions
-- host.bd             — web hosting, domain registration
-- vps.com.bd          — VPS and cloud servers
-- alpha.net.bd        — general IT services and support
-
-Customer service agents handle billing queries, technical issues, new service
-inquiries, and complaints in Bengali."""
-
 _PROMPT_TEMPLATE = """\
-You are a call quality analyst for the company described below.
-
-{company_context}
-
-Analyze the following customer service call transcript and return a JSON object.
+You are a call quality analyst. Analyze the following customer service call transcript.
 The transcript uses [Agent] and [Customer] speaker labels.
 
 TRANSCRIPT:
@@ -51,7 +36,7 @@ TRANSCRIPT:
 
 Return ONLY a valid JSON object with exactly these fields (no markdown, no explanation):
 {{
-  "brand":              one of ["pbx.bd","host.bd","vps.com.bd","alpha.net.bd","unknown"],
+  "brand":              "the company or product/service name mentioned in the call, or null if not identifiable",
   "issue_category":     one of ["billing","technical","sales","complaint","inquiry","other"],
   "issue_summary":      "one sentence — what did the customer need?",
   "resolution":         one of ["resolved","unresolved","escalated","partial"],
@@ -136,10 +121,7 @@ class CallAnalyzer:
         log.info("  Analyzing: %s", path.name)
         t0 = time.time()
 
-        prompt = _PROMPT_TEMPLATE.format(
-            company_context=_COMPANY_CONTEXT,
-            transcript=transcript,
-        )
+        prompt = _PROMPT_TEMPLATE.format(transcript=transcript)
 
         try:
             from google.genai import types
