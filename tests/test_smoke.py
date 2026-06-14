@@ -47,6 +47,14 @@ def test_cli_parses_elevenlabs_engine():
     assert args.language == "ben"
 
 
+def test_cli_parses_gemini_engine():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--engine", "gemini", "--language", "bn", "--google-api-key", "k"]
+    )
+    assert args.engine == "gemini"
+    assert args.google_api_key == "k"
+
+
 def test_cli_requires_a_source():
     import pytest
 

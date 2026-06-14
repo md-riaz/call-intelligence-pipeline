@@ -227,6 +227,56 @@ This pipeline prevents it by default (`transcribe/engine.py`):
 
 ---
 
+## Google Gemini backend (free, recommended for Bengali)
+
+The default Whisper backend struggles with Bengali phone audio. Google Gemini Flash is
+**free** (up to 1,500 calls/day via Google AI Studio) and produces excellent Bengali
+transcriptions because Google's models have extensive South Asian language training data.
+
+**Cost:** Free tier — 1,500 requests/day, 15 requests/minute.
+**Privacy:** Audio is sent to Google's servers.
+**Accuracy:** Excellent for Bengali; comparable to ElevenLabs on most calls.
+
+### Setup
+
+```bash
+pip install ".[gemini]"
+export GOOGLE_API_KEY=your_key_here   # free key at https://aistudio.google.com
+```
+
+### Usage
+
+```bash
+# Single file
+transcribe --file call.wav --engine gemini --language bn
+
+# Batch
+transcribe --input /path/to/recordings --engine gemini \
+    --language bn --labels "Agent,Customer"
+```
+
+Or via the Python API:
+
+```python
+from transcribe import TranscriptionPipeline
+
+pipe = TranscriptionPipeline(
+    engine="gemini",
+    google_api_key="your_key",   # or set GOOGLE_API_KEY
+    language="bn",
+    speaker_labels=("Agent", "Customer"),
+    output_dir="./transcripts",
+)
+result = pipe.process_file("call.wav")
+print(result.full_text)
+```
+
+Gemini handles stereo calls natively via structured prompting — no manual channel
+splitting needed. Timestamps in the output are approximate (Gemini does not return
+word-level timing), so SRT files use the model's best-effort `[MM:SS]` estimates.
+
+---
+
 ## ElevenLabs Scribe backend (recommended for Bengali)
 
 The default Whisper `large-v3` backend works well for many languages but
@@ -277,14 +327,19 @@ needed. The `--labels` / `speaker_labels` argument maps ElevenLabs' internal
 
 ### Choosing a backend
 
-| | `whisper` (default) | `elevenlabs` |
-|---|---|---|
-| Cost | Free | ~$0.22/hr |
-| Privacy | Audio stays local | Sent to ElevenLabs |
-| Bengali accuracy | Poor on phone audio | Excellent |
-| Other languages | Good (99 languages) | Good (90+ languages) |
-| Offline | Yes | No |
-| GPU acceleration | Yes (`--device cuda`) | N/A (cloud) |
+| | `whisper` (default) | `gemini` | `elevenlabs` |
+|---|---|---|---|
+| Cost | Free | Free (1,500 req/day) | ~$0.22/hr |
+| Privacy | Audio stays local | Sent to Google | Sent to ElevenLabs |
+| Bengali accuracy | Poor on phone audio | Excellent | Excellent |
+| Other languages | Good (99 languages) | Good (100+ languages) | Good (90+ languages) |
+| Timestamps | Word-level | Approximate (MM:SS) | Word-level |
+| Offline | Yes | No | No |
+| GPU acceleration | Yes (`--device cuda`) | N/A | N/A |
+
+**Recommendation:** Start with `--engine gemini` for Bengali — it's free and significantly
+better than Whisper. Upgrade to `--engine elevenlabs` only if you need precise word-level
+timestamps in the SRT output or prefer ElevenLabs' diarization.
 
 ---
 
@@ -318,12 +373,14 @@ transcribe --file call.wav --device cuda --compute-type float16
 ```
 audio-transcription-pipeline/
 ├── transcribe/
-│   ├── engine.py      # faster-whisper wrapper + anti-repetition decoding
-│   ├── audio.py       # ffmpeg preprocessing & stereo channel splitting
-│   ├── pipeline.py    # orchestration + JSON/TXT/SRT output
-│   ├── cli.py         # `transcribe` CLI
-│   ├── accuracy.py    # `transcribe-check` self-test
-│   └── config.py      # optional config.env loader
+│   ├── engine.py           # faster-whisper wrapper + anti-repetition decoding
+│   ├── audio.py            # ffmpeg preprocessing & stereo channel splitting
+│   ├── pipeline.py         # orchestration + JSON/TXT/SRT output
+│   ├── cli.py              # `transcribe` CLI
+│   ├── accuracy.py         # `transcribe-check` self-test
+│   ├── elevenlabs_engine.py # ElevenLabs Scribe backend
+│   ├── gemini_engine.py    # Google Gemini Flash backend
+│   └── config.py           # optional config.env loader
 ├── tests/             # fast smoke tests (no model download)
 ├── samples/           # put your own audio here (git-ignored)
 ├── setup.sh           # one-command installer (Debian/Ubuntu)
