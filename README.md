@@ -3,9 +3,10 @@
 Turn **call recordings** into transcripts, quality scores, and agent coaching insights —
 in **any language**, from a single command.
 
-Powered by **Google Gemini** (free API, 1,500 calls/day). Handles real-world call
-center audio — 8 kHz phone lines, low bitrates, noisy environments — with excellent
-accuracy for Bengali and other South Asian languages.
+Powered by **Google Gemini** — free tier 500 requests/day, excellent Bengali accuracy.
+
+> Tested on real Bengali call center audio (8 kHz phone lines, noisy environments).
+> `gemini-3.1-flash-lite` is the default — 500 RPD free, excellent Bengali accuracy.
 
 > Works with recordings from **any** source — IP-PBX/SIP systems (FreeSWITCH,
 > Asterisk, FusionPBX, 3CX), softphones, mobile call recorders, Zoom/Meet exports,
@@ -15,20 +16,19 @@ accuracy for Bengali and other South Asian languages.
 
 ## Features
 
-- **Transcription** — accurate, speaker-labelled transcripts via Google Gemini Flash.
-  Handles stereo call recordings natively (Agent / Customer on separate channels).
+- **Transcription** — accurate, speaker-labelled transcripts. Gemini handles stereo
+  natively via a structured prompt — no manual channel splitting needed.
 - **Call quality analysis** — per-call scoring: issue type, resolution status, customer
   sentiment, agent behavior flags, strengths, and a concrete coaching tip.
-- **Batch summary CSV** — one row per call, ready to import into Excel or any BI tool
-  for agent scorecards and trend analysis.
+- **Batch summary CSV** — one row per call, ready for Excel or any BI tool.
 - **Any language** — auto-detected, or force a code (`--language bn`, `en`, `hi`, `ar`, …).
 - **Any format** — `wav, mp3, ogg, opus, flac, m4a, aac, gsm, amr`.
 - **Batch or single file** — process one recording or recurse a whole folder, optionally
   limited to the last N days. Already-processed files are skipped.
 - **Three output formats** — `.json` (structured), `.txt` (readable), `.srt` (subtitles).
-- **Offline fallback** — swap to local Whisper (`--engine whisper`) when audio must not
-  leave your servers. Note: Whisper accuracy on Bengali phone audio is poor.
-- **Installable CLI** — `transcribe`, `transcribe-analyze`, `transcribe-check`.
+- **Multi-key rotation** — add multiple API keys to multiply your free-tier quota.
+  3 Gemini keys × 500 RPD = 1,500 free calls/day.
+- **Installable CLI** — `transcribe`, `transcribe-analyze`.
 
 ---
 
@@ -36,8 +36,7 @@ accuracy for Bengali and other South Asian languages.
 
 - **Python 3.9+**
 - **ffmpeg** (system package — *not* installed by pip)
-- A free Google AI Studio API key — [aistudio.google.com](https://aistudio.google.com)
-  (Free tier limits: [ai.google.dev/gemini-api/docs/rate-limits](https://ai.google.dev/gemini-api/docs/rate-limits))
+- A free Gemini API key: [aistudio.google.com](https://aistudio.google.com) — no card needed
 
 ---
 
@@ -64,10 +63,11 @@ git clone https://github.com/md-riaz/call-intelligence-pipeline.git
 cd call-intelligence-pipeline
 python3 -m venv .venv
 source .venv/bin/activate          # Windows: .venv\Scripts\activate
+
 pip install ".[gemini]"
 
-# 3. Set your API key (free at https://aistudio.google.com)
-export GOOGLE_API_KEY=your_key_here
+# 3. Set your API key
+export GOOGLE_API_KEY=your_gemini_key_here
 ```
 
 ---
@@ -75,10 +75,13 @@ export GOOGLE_API_KEY=your_key_here
 ## Quick start
 
 ```bash
-# 1. Transcribe a Bengali call recording
+# Transcribe a Bengali call recording
 transcribe --file call.wav --language bn --labels "Agent,Customer"
 
-# 2. Analyze the transcript — scores, sentiment, flags
+# Use a higher-quality model (20 RPD free instead of 500)
+transcribe --file call.wav --model gemini-2.5-flash --language bn
+
+# Analyze the transcript — scores, sentiment, flags
 transcribe-analyze --file transcripts/call.json
 
 # Batch: transcribe + analyze an entire folder
@@ -100,15 +103,21 @@ Each recording produces `transcripts/<name>.json`, `.txt`, and `.srt`.
 | `--input, -i` | Transcribe a directory (recursive) | — |
 | `--output, -o` | Output directory | `./transcripts` |
 | `--language, -l` | Force an ISO code, or `auto` to detect | `auto` |
-| `--labels` | Comma-separated speaker labels for stereo channels | `Speaker A,Speaker B` |
+| `--model, -m` | Gemini model ID (see table below) | `gemini-3.1-flash-lite` |
+| `--labels` | Comma-separated speaker labels | `Speaker A,Speaker B` |
 | `--days, -d` | With `--input`: only files modified in last N days | all |
-| `--google-api-key` | Google AI Studio API key (overrides `GOOGLE_API_KEY`) | — |
-| `--no-separate-speakers` | Mix stereo to mono instead of splitting channels | off |
+| `--google-api-key` | Gemini API key (overrides `GOOGLE_API_KEY`) | — |
 | `--no-srt` | Skip writing `.srt` subtitles | off |
 | `--reprocess` | Re-transcribe files even if already done | off |
-| `--engine` | `gemini` (default) or `whisper` (offline fallback) | `gemini` |
 
 (`--file` and `--input` are mutually exclusive; one is required.)
+
+**Model options:**
+
+| Model | RPD (free) | Notes |
+|---|---|---|
+| `gemini-3.1-flash-lite` | **500** | Default — best free-tier throughput |
+| `gemini-2.5-flash` | 20 | Higher quality, lower free quota |
 
 ---
 
@@ -126,12 +135,16 @@ transcribe-analyze --input transcripts/
 
 # Re-score everything (e.g. after refining the prompt)
 transcribe-analyze --input transcripts/ --reanalyze
+
+# Use a specific model
+transcribe-analyze --input transcripts/ --model gemini-2.5-flash
 ```
 
 | Option | Description |
 |---|---|
 | `--file, -f` | Single transcript `.json` to analyze |
 | `--input, -i` | Directory of transcript `.json` files |
+| `--model, -m` | Gemini model ID (default: `gemini-3.1-flash-lite`) |
 | `--google-api-key` | Overrides `GOOGLE_API_KEY` env var |
 | `--reanalyze` | Re-analyze files that already have a score |
 | `--no-csv` | Skip writing `analysis_summary.csv` |
@@ -159,17 +172,6 @@ for weekly agent scorecards and management trend reports.
 
 ---
 
-### `transcribe-check` — Whisper self-test
-
-Only relevant when using `--engine whisper`. Runs one file end-to-end and flags
-repetition loops (a common Whisper failure on noisy audio):
-
-```bash
-transcribe-check --file call.wav --language en
-```
-
----
-
 ### Python API
 
 ```python
@@ -178,7 +180,7 @@ from transcribe.analyze import CallAnalyzer
 
 # Transcribe
 pipe = TranscriptionPipeline(
-    engine="gemini",
+    gemini_model_id="gemini-3.1-flash-lite",
     google_api_key="your_key",   # or set GOOGLE_API_KEY env var
     language="bn",
     speaker_labels=("Agent", "Customer"),
@@ -190,6 +192,29 @@ result = pipe.process_file("call.wav")
 analyzer = CallAnalyzer(api_key="your_key")
 analysis = analyzer.analyze_file("transcripts/call.json")
 print(analysis.agent_score, analysis.coaching_tip)
+```
+
+---
+
+## Multi-key rotation
+
+Each Google AI Studio project has its own daily quota. Add multiple keys to multiply
+your free-tier limit — key rotation is automatic on `429 RESOURCE_EXHAUSTED`.
+
+**In `config.env`:**
+```bash
+# Option A — comma-separated (3 keys × 500 RPD = 1,500 free calls/day)
+GOOGLE_API_KEYS=AIza...key1,AIza...key2,AIza...key3
+
+# Option B — numbered (easier to enable/disable one at a time)
+GOOGLE_API_KEY_1=AIza...key1
+GOOGLE_API_KEY_2=AIza...key2
+GOOGLE_API_KEY_3=AIza...key3
+```
+
+**Via CLI:**
+```bash
+transcribe --file call.wav --google-api-key AIza...key
 ```
 
 ---
@@ -210,57 +235,22 @@ For a recording `call123.wav` you get:
 ## How it works
 
 ```
-call recording ──> Google Gemini API ──> transcript (JSON / TXT / SRT)
-                   (original file;                    │
-                    stereo handled natively)           ▼
-                                           Gemini analysis prompt
-                                                       │
-                                                       ▼
-                                           analysis block appended to JSON
-                                           + analysis_summary.csv updated
+call recording ──> Gemini API ──> transcript (JSON / TXT / SRT)
+                   (stereo speaker                   │
+                    separation via prompt)            ▼
+                                             Gemini analysis prompt
+                                                     │
+                                                     ▼
+                                         analysis block appended to JSON
+                                         + analysis_summary.csv updated
 ```
 
-1. The audio file is sent to Gemini with a structured transcription prompt.
-   Gemini handles stereo speaker separation natively — no local preprocessing needed.
-   Timestamps in the output are approximate (`[MM:SS]` granularity).
-2. Each transcript JSON is then passed to a second Gemini call with a quality
-   analysis prompt. It returns brand, issue category, FCR, sentiment, agent score,
-   flags, strengths, and a coaching tip as structured JSON.
-3. The analysis block is written back into the transcript JSON in-place, and
-   `analysis_summary.csv` is regenerated from all analyzed files.
-
----
-
-## Offline / privacy mode (`--engine whisper`)
-
-If audio cannot leave your servers, pass `--engine whisper` to use local
-[faster-whisper](https://github.com/SYSTRAN/faster-whisper) instead of Gemini.
-
-```bash
-pip install .   # faster-whisper is a core dependency
-transcribe --file call.wav --engine whisper --language en
-```
-
-**Limitations when using Whisper:**
-- Bengali accuracy is poor on low-quality phone audio (8 kHz, noisy lines).
-  Use Gemini for Bengali calls.
-- Requires ~3 GB RAM for the `large-v3` model (int8).
-- `transcribe-analyze` still requires a Gemini API key — analysis is always cloud-based.
-- `--device cuda` enables GPU acceleration if CUDA is available.
-
----
-
-## Choosing a backend
-
-| | `gemini` (**default**) | `whisper` |
-|---|---|---|
-| Bengali accuracy | Excellent | Poor on phone audio |
-| Other languages | Good (100+ languages) | Good (99 languages) |
-| Cost | Free (1,500 req/day) | Free |
-| Privacy | Audio sent to Google | Audio stays local |
-| Timestamps | Approximate (MM:SS) | Word-level (ms) |
-| Offline | No | Yes |
-| API key | Yes (free) | No |
+1. The audio file is sent directly to Gemini. Stereo speaker separation is handled
+   natively via the transcription prompt — no preprocessing needed.
+2. Timestamps in the output are approximate (`[MM:SS]` granularity).
+3. Each transcript JSON is passed to Gemini with a quality analysis prompt. It returns
+   brand, issue category, resolution, sentiment, agent score, flags, strengths, and a
+   coaching tip as structured JSON.
 
 ---
 
@@ -268,11 +258,10 @@ transcribe --file call.wav --engine whisper --language en
 
 | Symptom | Fix |
 |---|---|
-| Gemini `429 RESOURCE_EXHAUSTED` | Free-tier daily limit hit. Wait until the next day or check [ai.dev/rate-limit](https://ai.dev/rate-limit). |
-| Empty or garbled transcript | Confirm the file has speech. Try `--language bn` to force language detection. |
-| Wrong speaker labels | Adjust `--labels "Agent,Customer"` to match your recording convention. |
+| `429 RESOURCE_EXHAUSTED` | Daily limit hit. Add more API keys via `GOOGLE_API_KEYS` in `config.env`, or wait until the next day. See [rate limits](https://ai.google.dev/gemini-api/docs/rate-limits). |
+| Empty or garbled transcript | Confirm the file has speech. Try `--language bn` to force language. |
+| Speaker labels reversed | Gemini infers roles from context. If the support agent answers first and is labelled as `Customer`, flip the labels: `--labels "Customer,Agent"`. |
 | `ffmpeg: command not found` | Install via your OS package manager (`apt`/`brew`/`choco`). |
-| Whisper repetition loop | Use `--engine gemini` instead, or run `transcribe-check` to diagnose. |
 
 ---
 
@@ -281,18 +270,18 @@ transcribe --file call.wav --engine whisper --language en
 ```
 call-intelligence-pipeline/
 ├── transcribe/
-│   ├── gemini_engine.py    # Google Gemini transcription backend (default)
+│   ├── gemini_engine.py    # Google Gemini transcription backend
+│   ├── key_pool.py         # multi-key rotation (auto on 429)
 │   ├── analyze.py          # call quality analysis (score, sentiment, flags)
 │   ├── analyze_cli.py      # `transcribe-analyze` CLI
 │   ├── pipeline.py         # orchestration + JSON/TXT/SRT output
 │   ├── cli.py              # `transcribe` CLI
-│   ├── audio.py            # ffmpeg preprocessing & stereo channel splitting
-│   ├── engine.py           # faster-whisper backend (offline fallback)
-│   ├── accuracy.py         # `transcribe-check` (Whisper self-test)
-│   └── config.py           # optional config.env loader
-├── tests/                  # fast smoke tests (no model download required)
+│   ├── audio.py            # ffmpeg preprocessing
+│   └── config.py           # config.env loader
+├── tests/                  # fast smoke tests (no API calls required)
 ├── samples/                # put your own audio here (git-ignored)
 ├── setup.sh                # one-command installer (Debian/Ubuntu)
+├── config.example.env      # copy to config.env for persistent defaults
 ├── pyproject.toml
 ├── CONTRIBUTING.md
 └── LICENSE                 # MIT
@@ -305,21 +294,20 @@ call-intelligence-pipeline/
 Call recordings can contain personal data.
 
 - Audio files and `transcripts/` are **git-ignored** — never commit real recordings.
-- With `--engine gemini` (default), audio is sent to Google's servers.
-- With `--engine whisper`, audio never leaves your machine — but Bengali accuracy
-  will be significantly lower.
+- Audio is sent to the Google Gemini API for transcription and analysis.
+- Review [Google's data usage policies](https://ai.google.dev/gemini-api/terms) before
+  processing recordings that contain personal data.
 
 ---
 
 ## License
 
-[MIT](LICENSE) — free to use, modify, and distribute. Use of the Gemini API is
-subject to [Google's Terms of Service](https://ai.google.dev/terms).
+[MIT](LICENSE) — free to use, modify, and distribute. Use of the Gemini API is subject
+to [Google AI Terms](https://ai.google.dev/terms).
 
 ---
 
 ## Acknowledgements
 
 - [Google Gemini](https://ai.google.dev/)
-- [faster-whisper](https://github.com/SYSTRAN/faster-whisper) (offline fallback)
 - [ffmpeg](https://ffmpeg.org/)

@@ -11,7 +11,7 @@ from . import __version__
 from .config import load_config
 from .pipeline import TranscriptionPipeline
 
-MODELS = ["tiny", "base", "small", "medium", "large-v2", "large-v3"]
+_GEMINI_DEFAULT = "gemini-3.1-flash-lite"
 
 
 def _setup_logging(output_dir: str) -> None:
@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="transcribe",
         description="Transcribe audio call recordings into speaker-labelled text "
-        "using faster-whisper. Works with any language and any ffmpeg-readable format.",
+        "using Google Gemini.",
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", "-i", help="Directory of recordings (processed recursively)")
@@ -41,34 +41,23 @@ def build_parser() -> argparse.ArgumentParser:
     ap.add_argument("--output", "-o", default="./transcripts", help="Output directory")
     ap.add_argument(
         "--language", "-l", default=None,
-        help="ISO language code to force (e.g. en, bn, hi, ar, es). "
-        "Omit or use 'auto' to auto-detect.",
+        help="ISO language code to force (e.g. bn, en, hi). Omit for auto-detect.",
     )
-    ap.add_argument("--model", "-m", default=None, choices=MODELS,
-                    help="Whisper model (default: from config.env or large-v3)")
-    ap.add_argument("--device", default="auto", choices=["auto", "cpu", "cuda"],
-                    help="Compute device (default: auto)")
-    ap.add_argument("--compute-type", default=None,
-                    help="ctranslate2 compute type (default: int8 on CPU, float16 on GPU)")
+    ap.add_argument(
+        "--model", "-m", default=None,
+        help="Gemini model ID. gemini-3.1-flash-lite (default, 500 RPD free) or "
+             "gemini-2.5-flash (higher quality, 20 RPD free).",
+    )
     ap.add_argument("--days", "-d", type=int, default=None,
                     help="With --input: only files modified in the last N days")
     ap.add_argument("--labels", default="Speaker A,Speaker B",
-                    help="Comma-separated labels for stereo channels "
-                    "(e.g. 'Agent,Customer'). Default: 'Speaker A,Speaker B'")
-    ap.add_argument("--no-separate-speakers", action="store_true",
-                    help="Mix stereo down to mono instead of transcribing channels separately")
+                    help="Comma-separated speaker labels (e.g. 'Agent,Customer')")
     ap.add_argument("--no-srt", action="store_true", help="Do not write .srt subtitles")
     ap.add_argument("--reprocess", action="store_true",
-                    help="Re-transcribe files even if already in processed_files.json")
-    ap.add_argument(
-        "--engine", default="gemini", choices=["whisper", "gemini"],
-        help="Transcription backend. 'gemini' = Google Gemini Flash API, free tier, "
-        "excellent Bengali accuracy (default). Requires GOOGLE_API_KEY env var or "
-        "--google-api-key. 'whisper' = local faster-whisper, fully offline/private.",
-    )
+                    help="Re-transcribe files even if already done")
     ap.add_argument("--google-api-key", default=None,
-                    help="Google AI Studio API key for Gemini (overrides GOOGLE_API_KEY env var). "
-                    "Get a free key at https://aistudio.google.com")
+                    help="Google AI Studio API key (overrides GOOGLE_API_KEY). "
+                    "Supports comma-separated multiple keys for rate-limit rotation.")
     ap.add_argument("--version", action="version", version=f"%(prog)s {__version__}")
     return ap
 
@@ -79,26 +68,22 @@ def main(argv=None) -> int:
     log = logging.getLogger(__name__)
 
     cfg = load_config()
-    model = args.model or cfg.get("WHISPER_MODEL", "large-v3")
     language = None if (args.language in (None, "auto")) else args.language
     labels = tuple((args.labels.split(",", 1) + ["Speaker B"])[:2])
+    model = args.model or cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
 
     log.info(
-        "audio-transcription-pipeline %s | engine=%s | model=%s | lang=%s | device=%s",
-        __version__, args.engine, model, language or "auto", args.device,
+        "call-intelligence-pipeline %s | model=%s | lang=%s",
+        __version__, model, language or "auto",
     )
 
     pipeline = TranscriptionPipeline(
-        model_size=model,
         output_dir=args.output,
         language=language,
-        device=args.device,
-        compute_type=args.compute_type,
         speaker_labels=labels,
-        separate_speakers=not args.no_separate_speakers,
         write_srt=not args.no_srt,
-        engine=args.engine,
         google_api_key=args.google_api_key,
+        gemini_model_id=model,
     )
 
     if args.file:

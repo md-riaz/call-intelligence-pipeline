@@ -1,29 +1,26 @@
 """
-Google Gemini Flash transcription backend.
+Google Gemini transcription backend.
 
-Gemini 1.5/2.0 Flash has strong Bengali support and a generous free tier
-via Google AI Studio:
-  - 1,500 requests/day free
-  - 15 requests/minute
-  - Audio: 1 token per second (~150 tokens for a 2.5-min call)
+Default model: gemini-3.1-flash-lite
+  - 500 RPD free, 15 RPM
+  - Excellent Bengali accuracy on 8 kHz phone audio
+  - Handles stereo speaker separation natively via prompt
 
-Get a free API key at: https://aistudio.google.com
+Also available: gemini-2.5-flash (20 RPD free, slightly higher quality)
 
-Requires:
-    pip install google-genai
-    export GOOGLE_API_KEY=your_key_here
-
-Privacy: audio is uploaded to Google's servers.
+Multiple API keys multiply free-tier quota automatically — see config.example.env.
+Get free keys at: https://aistudio.google.com
 """
 
 from __future__ import annotations
 
 import logging
-import os
 import re
 import time
 from pathlib import Path
 from typing import Optional
+
+from .key_pool import AllKeysExhaustedError, GeminiKeyPool, _is_rate_limit_error
 
 log = logging.getLogger(__name__)
 
@@ -103,29 +100,26 @@ def _parse_transcript(text: str, speaker_labels: tuple) -> tuple[list, str]:
 
 
 class GeminiTranscriber:
-    """Wraps Google Gemini Flash for audio transcription."""
+    """Wraps Google Gemini for audio transcription with key-pool rotation."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_id: str = "gemini-2.5-flash",
+        model_id: str = "gemini-3.1-flash-lite",
+        key_pool: Optional[GeminiKeyPool] = None,
     ):
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY", "")
         self.model_id = model_id
-        if not self.api_key:
-            raise ValueError(
-                "Google API key not set. "
-                "Pass api_key= or set the GOOGLE_API_KEY environment variable. "
-                "Get a free key at https://aistudio.google.com"
-            )
         try:
-            from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            from google import genai  # noqa: F401 — validate install early
         except ImportError:
             raise SystemExit(
-                "google-genai package not installed. Run: pip install google-genai"
+                "google-genai package not installed. Run: pip install '.[gemini]'"
             )
-        log.info("Gemini transcription backend ready (model=%s)", self.model_id)
+        self._pool = key_pool or GeminiKeyPool.from_env(explicit_key=api_key)
+        log.info(
+            "Gemini transcription backend ready (model=%s, keys=%d)",
+            self.model_id, self._pool.total_count,
+        )
 
     def transcribe(
         self,
@@ -137,7 +131,8 @@ class GeminiTranscriber:
         """Upload audio to Gemini and transcribe.
 
         Gemini handles stereo natively — no manual channel splitting needed.
-        For files over ~20 MB the File API is used automatically.
+        Files over ~19 MB are sent via the File API. On 429 RESOURCE_EXHAUSTED
+        the next key in the pool is tried automatically.
         """
         path = Path(audio_path)
         if not path.exists():
@@ -147,55 +142,62 @@ class GeminiTranscriber:
         log.info("Transcribing via Gemini %s: %s (%.1f MB)", self.model_id, path.name, size_mb)
         t = time.time()
 
-        from google import genai
         from google.genai import types
 
         mime = _mime_type(path.suffix)
-
-        # Build a language hint if the caller specified one.
-        lang_hint = ""
-        if language:
-            lang_hint = f"\nThe language spoken is primarily {language} (ISO code). "
-
+        lang_hint = f"\nThe language spoken is primarily {language} (ISO code). " if language else ""
         prompt = _PROMPT + lang_hint
 
-        if size_mb > 19:
-            # Use the File API for large files (avoids base64 bloat in the request).
-            log.info("  File > 19 MB — uploading via Gemini File API...")
-            uploaded = self._client.files.upload(file=str(path), config={"mime_type": mime})
-            parts = [
-                types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime),
-                types.Part.from_text(text=prompt),
-            ]
-            # Clean up the uploaded file after we're done.
-            cleanup_file = uploaded.name
-        else:
-            audio_bytes = path.read_bytes()
-            parts = [
-                types.Part.from_bytes(data=audio_bytes, mime_type=mime),
-                types.Part.from_text(text=prompt),
-            ]
-            cleanup_file = None
-
-        response = self._client.models.generate_content(
-            model=self.model_id,
-            contents=parts,
-        )
-
-        if cleanup_file:
+        while True:
+            client, key_idx = self._pool.get_client()
+            uploaded_name = None
             try:
-                self._client.files.delete(name=cleanup_file)
-            except Exception:
-                pass
+                if size_mb > 19:
+                    log.info("  File > 19 MB — uploading via Gemini File API...")
+                    uploaded = client.files.upload(
+                        file=str(path), config={"mime_type": mime}
+                    )
+                    uploaded_name = uploaded.name
+                    parts = [
+                        types.Part.from_uri(file_uri=uploaded.uri, mime_type=mime),
+                        types.Part.from_text(text=prompt),
+                    ]
+                else:
+                    parts = [
+                        types.Part.from_bytes(data=path.read_bytes(), mime_type=mime),
+                        types.Part.from_text(text=prompt),
+                    ]
+
+                response = client.models.generate_content(
+                    model=self.model_id,
+                    contents=parts,
+                )
+                break  # success
+
+            except Exception as e:
+                if uploaded_name:
+                    try:
+                        client.files.delete(name=uploaded_name)
+                    except Exception:
+                        pass
+                    uploaded_name = None
+                if _is_rate_limit_error(e):
+                    self._pool.mark_exhausted(key_idx)
+                    # AllKeysExhaustedError raised by get_client() on next iteration
+                    continue
+                raise
+            finally:
+                if uploaded_name:
+                    try:
+                        client.files.delete(name=uploaded_name)
+                    except Exception:
+                        pass
 
         raw_text = response.text or ""
         segments, full_text = _parse_transcript(raw_text, speaker_labels)
         elapsed = time.time() - t
 
-        log.info(
-            "  Done: %d segments, took %.1fs",
-            len(segments), elapsed,
-        )
+        log.info("  Done: %d segments, took %.1fs", len(segments), elapsed)
         return {
             "segments": segments,
             "full_text": full_text,

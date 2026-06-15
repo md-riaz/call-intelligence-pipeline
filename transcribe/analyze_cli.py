@@ -9,6 +9,7 @@ from pathlib import Path
 
 from . import __version__
 from .analyze import CallAnalyzer
+from .config import load_config
 
 
 def _setup_logging(output_dir: str) -> None:
@@ -43,6 +44,11 @@ def build_parser() -> argparse.ArgumentParser:
         help="Google AI Studio API key (overrides GOOGLE_API_KEY env var)",
     )
     ap.add_argument(
+        "--model", "-m", default=None,
+        help="Gemini model ID for analysis (default: gemini-2.5-flash). "
+             "Use gemini-3.1-flash-lite for 500 RPD free tier.",
+    )
+    ap.add_argument(
         "--reanalyze", action="store_true",
         help="Re-analyze files that already have an analysis block",
     )
@@ -62,7 +68,11 @@ def main(argv=None) -> int:
     log = logging.getLogger(__name__)
     log.info("transcribe-analyze %s", __version__)
 
-    analyzer = CallAnalyzer(api_key=args.google_api_key)
+    cfg = load_config()
+    model = args.model or cfg.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
+    log.info("Analysis model: %s", model)
+
+    analyzer = CallAnalyzer(api_key=args.google_api_key, model_id=model)
 
     if args.file:
         path = Path(args.file)

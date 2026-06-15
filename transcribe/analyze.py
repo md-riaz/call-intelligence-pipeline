@@ -19,11 +19,12 @@ from __future__ import annotations
 import csv
 import json
 import logging
-import os
 import time
-from dataclasses import asdict, dataclass, fields
+from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
+
+from .key_pool import AllKeysExhaustedError, GeminiKeyPool, _is_rate_limit_error  # noqa: F401
 
 log = logging.getLogger(__name__)
 
@@ -75,21 +76,41 @@ class CallAnalyzer:
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_id: str = "gemini-2.5-flash",
+        model_id: str = "gemini-3.1-flash-lite",
+        key_pool: Optional[GeminiKeyPool] = None,
     ):
-        self.api_key = api_key or os.environ.get("GOOGLE_API_KEY", "")
         self.model_id = model_id
-        if not self.api_key:
-            raise ValueError(
-                "Google API key not set. Pass api_key= or set GOOGLE_API_KEY. "
-                "Get a free key at https://aistudio.google.com"
-            )
         try:
-            from google import genai
-            self._client = genai.Client(api_key=self.api_key)
+            from google import genai  # noqa: F401
         except ImportError:
             raise SystemExit("google-genai not installed. Run: pip install '.[gemini]'")
-        log.info("CallAnalyzer ready (model=%s)", self.model_id)
+        self._pool = key_pool or GeminiKeyPool.from_env(explicit_key=api_key)
+        log.info(
+            "CallAnalyzer ready (model=%s, keys=%d)",
+            self.model_id, self._pool.total_count,
+        )
+
+    # ------------------------------------------------------------------
+    # Internal
+    # ------------------------------------------------------------------
+
+    def _call_with_rotation(self, prompt: str, types):
+        """Call generate_content with automatic key rotation on 429."""
+        while True:
+            client, key_idx = self._pool.get_client()
+            try:
+                return client.models.generate_content(
+                    model=self.model_id,
+                    contents=prompt,
+                    config=types.GenerateContentConfig(
+                        response_mime_type="application/json",
+                    ),
+                )
+            except Exception as e:
+                if _is_rate_limit_error(e):
+                    self._pool.mark_exhausted(key_idx)
+                    continue
+                raise
 
     # ------------------------------------------------------------------
     # Single file
@@ -125,15 +146,8 @@ class CallAnalyzer:
 
         try:
             from google.genai import types
-            response = self._client.models.generate_content(
-                model=self.model_id,
-                contents=prompt,
-                config=types.GenerateContentConfig(
-                    response_mime_type="application/json",
-                ),
-            )
+            response = self._call_with_rotation(prompt, types)
             raw = (response.text or "{}").strip()
-            # Strip markdown fences if the model wrapped the JSON
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             result = json.loads(raw)

@@ -10,28 +10,24 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "call-intelligence-pipeline contributors" }]
-keywords = ["call-center", "speech-to-text", "asr", "call-quality", "qa", "transcription", "sentiment", "gemini", "whisper"]
+keywords = ["call-center", "speech-to-text", "asr", "call-quality", "qa", "transcription", "sentiment", "gemini", "bengali"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
     "Operating System :: OS Independent",
     "Topic :: Multimedia :: Sound/Audio :: Speech",
 ]
-dependencies = [
-    "faster-whisper>=1.0.0",
-]
+dependencies = []
 
 [project.optional-dependencies]
-# Google Gemini Flash backend — free tier (1500 req/day), excellent Bengali accuracy.
-# Required only when using --engine gemini.
+# Google Gemini backend — best Bengali accuracy, free tier 20–500 RPD.
 gemini = ["google-genai>=1.0.0"]
-# Extras used by reporting/export helpers; not required for core transcription.
+# Reporting helpers (CSV/Excel export).
 reports = ["pandas", "openpyxl", "jinja2"]
 dev = ["pytest", "ruff"]
 
 [project.scripts]
 transcribe = "transcribe.cli:main"
-transcribe-check = "transcribe.accuracy:main"
 transcribe-analyze = "transcribe.analyze_cli:main"
 
 [project.urls]

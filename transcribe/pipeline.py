@@ -1,16 +1,10 @@
 """
-Transcription pipeline: orchestrates preprocessing, optional stereo speaker
-separation, transcription, and output writing (JSON + TXT + SRT).
+Transcription pipeline: orchestrates preprocessing, transcription, and output
+writing (JSON + TXT + SRT).
 
-Two transcription backends are supported:
-
-  whisper (default) — runs locally via faster-whisper. Free, private, works
-      offline. Use large-v3 for best accuracy. Adequate for most languages but
-      noticeably weaker on Bengali phone audio compared to cloud backends.
-
-  gemini — sends audio to Google Gemini Flash API. Free tier: 1,500 req/day.
-      Requires a free API key from aistudio.google.com. Audio sent to Google.
-      Very strong on Bengali; handles stereo natively via structured prompts.
+Transcription backend: Google Gemini — free tier 500 RPD (gemini-3.1-flash-lite)
+or 20 RPD (gemini-2.5-flash). Handles stereo speaker separation natively via
+prompt. Multiple API keys multiply the daily quota automatically.
 """
 
 from __future__ import annotations
@@ -24,8 +18,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Optional
 
-from .audio import AudioPreprocessor, StereoSplitter
-from .engine import WhisperTranscriber
+from .audio import AudioPreprocessor
 
 log = logging.getLogger(__name__)
 
@@ -59,17 +52,14 @@ def _srt_timestamp(seconds: float) -> str:
 class TranscriptionPipeline:
     def __init__(
         self,
-        model_size: str = "large-v3",
         output_dir: str = "./transcripts",
         temp_dir: Optional[str] = None,
         language: Optional[str] = None,
-        device: str = "auto",
-        compute_type: Optional[str] = None,
         speaker_labels: tuple = ("Speaker A", "Speaker B"),
         separate_speakers: bool = True,
         write_srt: bool = True,
-        engine: str = "gemini",
         google_api_key: Optional[str] = None,
+        gemini_model_id: str = "gemini-3.1-flash-lite",
     ):
         self.output_dir = Path(output_dir)
         self.temp_dir = Path(temp_dir or output_dir) / "_temp"
@@ -79,21 +69,12 @@ class TranscriptionPipeline:
         self.speaker_labels = speaker_labels
         self.separate_speakers = separate_speakers
         self.write_srt = write_srt
-        self.engine = engine.lower()
 
-        if self.engine == "gemini":
-            from .gemini_engine import GeminiTranscriber
-            self.transcriber = GeminiTranscriber(api_key=google_api_key)
-            self._model_label = f"gemini/{self.transcriber.model_id}"
-        elif self.engine == "whisper":
-            self.transcriber = WhisperTranscriber(
-                model_size=model_size, device=device, compute_type=compute_type
-            )
-            self._model_label = f"whisper/{model_size}"
-        else:
-            raise ValueError(
-                f"Unknown engine '{engine}'. Choose 'whisper' or 'gemini'."
-            )
+        from .gemini_engine import GeminiTranscriber
+        self.transcriber = GeminiTranscriber(
+            api_key=google_api_key, model_id=gemini_model_id
+        )
+        self._model_label = f"gemini/{self.transcriber.model_id}"
 
         self.processed_log = self.output_dir / "processed_files.json"
         self.processed = self._load_processed()
@@ -137,46 +118,15 @@ class TranscriptionPipeline:
                 os.path.getmtime(str(audio_path))
             ).strftime("%Y-%m-%d %H:%M:%S")
 
-            if self.engine == "gemini":
-                # Cloud engines handle stereo diarization natively — send the
-                # original file directly, no manual channel splitting needed.
-                log.info("  Engine: Gemini")
-                r = self.transcriber.transcribe(
-                    str(audio_path),
-                    language=self.language,
-                    speaker_labels=self.speaker_labels,
-                )
-                segs = r["segments"]
-                full_text = r["full_text"]
-                duration = r["duration_seconds"]
-                lang, lang_conf = r["language_detected"], r["language_confidence"]
-                do_split = r["speakers_separated"]
-            else:
-                # Whisper path: manually split stereo → transcribe each channel.
-                is_stereo = StereoSplitter.is_stereo(str(audio_path))
-                do_split = is_stereo and self.separate_speakers
-
-                if do_split:
-                    log.info("  Stereo recording — separating speakers")
-                    left_wav, right_wav = StereoSplitter.split(
-                        str(audio_path), str(self.temp_dir)
-                    )
-                    lr = self.transcriber.transcribe(left_wav, language=self.language)
-                    rr = self.transcriber.transcribe(right_wav, language=self.language)
-                    segs = StereoSplitter.merge(
-                        lr["segments"], rr["segments"], labels=self.speaker_labels
-                    )
-                    full_text = self._labeled_text(segs)
-                    duration = max(lr["duration_seconds"], rr["duration_seconds"])
-                    lang, lang_conf = lr["language_detected"], lr["language_confidence"]
-                else:
-                    log.info("  %s recording", "Stereo (mixed)" if is_stereo else "Mono")
-                    wav = AudioPreprocessor.convert(str(audio_path), str(self.temp_dir))
-                    r = self.transcriber.transcribe(wav, language=self.language)
-                    segs = [{**s, "speaker": ""} for s in r["segments"]]
-                    full_text = r["full_text"]
-                    duration = r["duration_seconds"]
-                    lang, lang_conf = r["language_detected"], r["language_confidence"]
+            r = self.transcriber.transcribe(
+                str(audio_path),
+                language=self.language,
+                speaker_labels=self.speaker_labels,
+            )
+            segs = r["segments"]
+            full_text = r["full_text"]
+            duration = r["duration_seconds"]
+            lang, lang_conf = r["language_detected"], r["language_confidence"]
 
             transcript = CallTranscript(
                 call_id=call_id, filename=audio_path.name, date=file_date,
@@ -185,7 +135,7 @@ class TranscriptionPipeline:
                 word_count=len(full_text.split()),
                 processing_time_seconds=round(time.time() - t0, 2),
                 model_used=self._model_label, status="success",
-                speakers_separated=do_split,
+                speakers_separated=r["speakers_separated"],
             )
             self._save_outputs(transcript)
             self.processed.add(call_id)

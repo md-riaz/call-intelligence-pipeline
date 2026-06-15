@@ -1,4 +1,4 @@
-"""Lightweight smoke tests — no model download or audio required.
+"""Lightweight smoke tests — no API calls or audio required.
 
 These verify the package imports, the CLI parses arguments, and the pure
 helpers behave. Run with: pytest
@@ -40,17 +40,29 @@ def test_cli_parses_file_arg():
     assert args.language == "bn"
 
 
-def test_cli_parses_gemini_engine():
+def test_cli_parses_google_api_key():
     args = build_parser().parse_args(
-        ["--file", "x.wav", "--engine", "gemini", "--language", "bn", "--google-api-key", "k"]
+        ["--file", "x.wav", "--language", "bn", "--google-api-key", "k"]
     )
-    assert args.engine == "gemini"
     assert args.google_api_key == "k"
+
+
+def test_cli_model_flag():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--model", "gemini-3.1-flash-lite"]
+    )
+    assert args.model == "gemini-3.1-flash-lite"
+
+
+def test_cli_model_flag_25flash():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--model", "gemini-2.5-flash"]
+    )
+    assert args.model == "gemini-2.5-flash"
 
 
 def test_cli_requires_a_source():
     import pytest
-
     with pytest.raises(SystemExit):
         build_parser().parse_args([])
 
@@ -70,6 +82,13 @@ def test_analyze_cli_parses_batch_args():
     assert args.no_csv
 
 
+def test_analyze_cli_model_flag():
+    args = build_analyze_parser().parse_args(
+        ["--file", "t.json", "--model", "gemini-3.1-flash-lite"]
+    )
+    assert args.model == "gemini-3.1-flash-lite"
+
+
 def test_analyze_csv_columns():
     from transcribe.analyze import _CSV_COLUMNS
     required = {"call_id", "brand", "issue_category", "resolution",
@@ -77,3 +96,31 @@ def test_analyze_csv_columns():
     assert required.issubset(set(_CSV_COLUMNS))
 
 
+def test_key_pool_single_key():
+    from transcribe.key_pool import GeminiKeyPool
+    pool = GeminiKeyPool(["fake-key-1"])
+    assert pool.total_count == 1
+    assert pool.active_count == 1
+
+
+def test_key_pool_deduplicates():
+    from transcribe.key_pool import GeminiKeyPool
+    pool = GeminiKeyPool(["k1", "k2", "k1", "k3"])
+    assert pool.total_count == 3
+
+
+def test_key_pool_rotation():
+    from transcribe.key_pool import GeminiKeyPool, AllKeysExhaustedError
+    pool = GeminiKeyPool(["k1", "k2"])
+    pool._clients = {0: "client0", 1: "client1"}
+    _, idx = pool.get_client()
+    assert idx == 0
+    pool.mark_exhausted(0)
+    _, idx = pool.get_client()
+    assert idx == 1
+    pool.mark_exhausted(1)
+    try:
+        pool.get_client()
+        assert False, "Should have raised AllKeysExhaustedError"
+    except AllKeysExhaustedError:
+        pass
