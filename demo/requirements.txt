@@ -1,0 +1,15 @@
+# Demo web server dependencies
+#
+# Install the main package first from the repo root:
+#   pip install ".[gemini]"
+#
+# Then install these:
+#   pip install -r demo/requirements.txt
+
+flask>=2.3.0
+werkzeug>=2.3.0
+
+# Production server (used by supervisor.conf)
+gunicorn>=21.2.0
+# gevent is optional but recommended for SSE under gunicorn:
+# gevent>=23.9.0
