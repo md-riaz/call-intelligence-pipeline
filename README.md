@@ -37,6 +37,7 @@ accuracy for Bengali and other South Asian languages.
 - **Python 3.9+**
 - **ffmpeg** (system package — *not* installed by pip)
 - A free Google AI Studio API key — [aistudio.google.com](https://aistudio.google.com)
+  (Free tier limits: [ai.google.dev/gemini-api/docs/rate-limits](https://ai.google.dev/gemini-api/docs/rate-limits))
 
 ---
 
