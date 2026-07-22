@@ -4,6 +4,8 @@ These verify the package imports, the CLI parses arguments, and the pure
 helpers behave. Run with: pytest
 """
 
+import json
+
 from transcribe import __version__
 from transcribe.audio import AudioPreprocessor, StereoSplitter
 from transcribe.cli import build_parser
@@ -115,11 +117,51 @@ def test_analyze_cli_parses_batch_args():
     assert args.no_csv
 
 
-def test_analyze_cli_model_flag():
+def test_analyze_cli_openai_compatible_flags():
     args = build_analyze_parser().parse_args(
-        ["--file", "t.json", "--model", "gemini-3.1-flash-lite"]
+        [
+            "--file", "t.json",
+            "--api-key", "sk-test",
+            "--base-url", "https://llm.example.com/v1",
+            "--model", "my-model",
+        ]
     )
-    assert args.model == "gemini-3.1-flash-lite"
+    assert args.api_key == "sk-test"
+    assert args.base_url == "https://llm.example.com/v1"
+    assert args.model == "my-model"
+
+
+def test_call_analyzer_requires_api_key(monkeypatch):
+    import pytest
+    from transcribe.analyze import CallAnalyzer
+
+    monkeypatch.delenv("OPENAI_API_KEY", raising=False)
+    with pytest.raises(SystemExit):
+        CallAnalyzer()
+
+
+def test_call_analyzer_extracts_openai_compatible_content(monkeypatch):
+    from transcribe.analyze import CallAnalyzer
+
+    analyzer = CallAnalyzer(api_key="sk-test", model_id="model-x", base_url="https://llm.example.com/v1")
+
+    class Resp:
+        def __enter__(self):
+            return self
+        def __exit__(self, *args):
+            return False
+        def read(self):
+            return json.dumps({
+                "choices": [{"message": {"content": '{"agent_score":91}'}}]
+            }).encode("utf-8")
+
+    def fake_urlopen(req, timeout):
+        assert req.full_url == "https://llm.example.com/v1/chat/completions"
+        assert timeout == 120
+        return Resp()
+
+    monkeypatch.setattr("transcribe.analyze.urllib.request.urlopen", fake_urlopen)
+    assert analyzer._call_model("prompt") == '{"agent_score":91}'
 
 
 def test_analyze_csv_columns():
@@ -194,6 +236,46 @@ def test_tugstugi_factory_uses_default_model(monkeypatch):
     assert isinstance(backend, FakeBackend)
     assert captured["model_id"] == "bengaliAI/tugstugi_bengaliai-asr_whisper-medium"
     assert captured["provider_name"] == "whisper-tugstugi"
+
+
+def test_cli_parses_engine_whisper_bn():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--engine", "whisper-bn", "--language", "bn"]
+    )
+    assert args.engine == "whisper-bn"
+    assert args.language == "bn"
+
+
+def test_backend_factory_whisper_bn_alias(monkeypatch):
+    from transcribe.backends import base
+
+    captured = {}
+
+    class FakeBackend:
+        def __init__(self, model_id=None, temp_dir=None, provider_name=""):
+            captured["model_id"] = model_id
+            captured["provider_name"] = provider_name
+
+    monkeypatch.setattr(
+        "transcribe.backends.whisper_sam15000.WhisperSam15000Backend", FakeBackend
+    )
+    backend = base.create_backend("whisper-bn")
+    assert isinstance(backend, FakeBackend)
+    assert captured["provider_name"] == "whisper-bn"
+
+
+def test_queue_lifecycle(tmp_path):
+    from transcribe.queue import TranscriptionQueue
+
+    queue = TranscriptionQueue(str(tmp_path / "queue.sqlite3"))
+    job = queue.create_job("audio.wav", str(tmp_path), language="bn")
+    assert queue.get_job(job.id).status == "queued"
+    claimed = queue.claim_next()
+    assert claimed.id == job.id
+    assert claimed.status == "processing"
+    queue.complete_job(job.id, str(tmp_path / "out.json"))
+    assert queue.get_job(job.id).status == "completed"
+
 
 def test_backend_factory_rejects_unknown_engine():
     import pytest

@@ -1,14 +1,14 @@
 """
-Demo web server for call-intelligence-pipeline.
+Legacy Flask demo web server for call-intelligence-pipeline.
 
 Runs a small Flask app that accepts audio file uploads, streams progress via
-Server-Sent Events, transcribes with Gemini, runs call quality analysis, and
-returns structured results to the browser.
+Server-Sent Events, transcribes audio with whisper-bn, optionally runs
+OpenAI-compatible call quality analysis, and returns structured results to the browser.
 
 Quick start (development):
     cd demo
     pip install -r requirements.txt
-    pip install "..[gemini]"        # from repo root: pip install ".[gemini]"
+    pip install "..[sam15000]"      # from repo root: pip install ".[sam15000]"
     python app.py                   # listens on 0.0.0.0:3433
 
 Production (gunicorn + nginx):
@@ -58,19 +58,16 @@ def index():
 
 @app.route("/api/process", methods=["POST"])
 def process():
-    api_keys_str = request.form.get("api_keys", "").strip()
-    transcribe_model = request.form.get("transcribe_model", "gemini-3.1-flash-lite")
-    analyze_model = request.form.get("analyze_model", "gemini-3.1-flash-lite")
+    analyze_api_key = request.form.get("analyze_api_key", "").strip() or os.getenv("OPENAI_API_KEY")
+    analyze_base_url = request.form.get("analyze_base_url", "").strip() or os.getenv("OPENAI_BASE_URL")
+    analyze_model = request.form.get("analyze_model", "").strip() or os.getenv("OPENAI_MODEL")
     language = request.form.get("language", "").strip() or None
     labels_str = request.form.get("labels", "Agent,Customer").strip()
     files = request.files.getlist("files")
 
-    if not api_keys_str:
-        return jsonify({"error": "At least one Gemini API key is required"}), 400
     if not files or not any(f.filename for f in files):
         return jsonify({"error": "No files uploaded"}), 400
 
-    api_keys = [k.strip() for k in api_keys_str.split(",") if k.strip()]
     speaker_labels = tuple((labels_str.split(",", 1) + ["Speaker B"])[:2])
 
     # Save all files to a temp dir before streaming begins (can't read form data mid-stream)
@@ -96,12 +93,18 @@ def process():
             from dataclasses import asdict
 
             from transcribe.analyze import CallAnalyzer
-            from transcribe.gemini_engine import GeminiTranscriber
-            from transcribe.key_pool import GeminiKeyPool
+            from transcribe.pipeline import TranscriptionPipeline
 
-            pool = GeminiKeyPool(api_keys)
-            transcriber = GeminiTranscriber(model_id=transcribe_model, key_pool=pool)
-            analyzer = CallAnalyzer(model_id=analyze_model, key_pool=pool)
+            transcriber = TranscriptionPipeline(
+                output_dir=tmpdir,
+                language=language,
+                speaker_labels=speaker_labels,
+                engine="whisper-bn",
+                whisper_model_id=os.getenv("WHISPER_MODEL"),
+            )
+            analyzer = None
+            if analyze_api_key:
+                analyzer = CallAnalyzer(api_key=analyze_api_key, model_id=analyze_model, base_url=analyze_base_url)
             total = len(saved)
 
             for i, finfo in enumerate(saved):
@@ -110,7 +113,9 @@ def process():
                 # ── Step 1: Transcribe ────────────────────────────────────────
                 yield _sse({"type": "progress", "file": orig, "index": i, "total": total, "step": "transcribing"})
                 try:
-                    tr = transcriber.transcribe(path, language=language, speaker_labels=speaker_labels)
+                    tx = transcriber.process_file(path, skip_done=False)
+                    if tx.status != "success":
+                        raise RuntimeError(tx.error or "Transcription failed")
                 except Exception as exc:
                     log.error("Transcription failed for %s: %s", orig, exc)
                     yield _sse({"type": "error", "file": orig, "index": i, "total": total,
@@ -123,12 +128,12 @@ def process():
                 transcript_data = {
                     "call_id": Path(orig).stem,
                     "filename": orig,
-                    "full_text": tr["full_text"],
-                    "segments": tr["segments"],
-                    "duration_seconds": tr["duration_seconds"],
-                    "language_detected": tr["language_detected"],
-                    "model_used": f"gemini/{transcribe_model}",
-                    "word_count": len(tr["full_text"].split()),
+                    "full_text": tx.full_text,
+                    "segments": tx.segments,
+                    "duration_seconds": tx.duration_seconds,
+                    "language_detected": tx.language_detected,
+                    "model_used": tx.model_used,
+                    "word_count": len(tx.full_text.split()),
                     "date": time.strftime("%Y-%m-%d %H:%M:%S"),
                     "status": "success",
                 }
@@ -137,9 +142,10 @@ def process():
 
                 analysis_dict = None
                 try:
-                    result = analyzer.analyze_file(temp_json, reanalyze=True)
-                    if result:
-                        analysis_dict = asdict(result)
+                    if analyzer:
+                        result = analyzer.analyze_file(temp_json, reanalyze=True)
+                        if result:
+                            analysis_dict = asdict(result)
                 except Exception as exc:
                     log.warning("Analysis failed for %s: %s", orig, exc)
 
@@ -148,10 +154,10 @@ def process():
                     "file": orig,
                     "index": i,
                     "total": total,
-                    "transcript": tr["full_text"],
-                    "segments": tr["segments"],
-                    "duration": tr["duration_seconds"],
-                    "language": tr["language_detected"],
+                    "transcript": tx.full_text,
+                    "segments": tx.segments,
+                    "duration": tx.duration_seconds,
+                    "language": tx.language_detected,
                     "analysis": analysis_dict,
                 })
 

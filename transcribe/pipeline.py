@@ -2,9 +2,8 @@
 Transcription pipeline: orchestrates preprocessing, transcription, and output
 writing (JSON + TXT + SRT).
 
-Transcription backends are pluggable. Gemini remains the default remote ASR
-provider, and whisper-sam15000 adds local GPU Bengali ASR for deployments that
-need on-prem transcription.
+Transcription backends are pluggable. The public service defaults to
+whisper-bn, a local GPU Bengali Whisper ASR backend.
 """
 
 from __future__ import annotations
@@ -60,7 +59,7 @@ class TranscriptionPipeline:
         write_srt: bool = True,
         google_api_key: Optional[str] = None,
         gemini_model_id: str = "gemini-3.1-flash-lite",
-        engine: str = "gemini",
+        engine: str = "whisper-bn",
         whisper_model_id: Optional[str] = None,
     ):
         self.output_dir = Path(output_dir)

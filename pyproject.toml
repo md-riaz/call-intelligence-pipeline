@@ -10,7 +10,7 @@ readme = "README.md"
 license = { text = "MIT" }
 requires-python = ">=3.9"
 authors = [{ name = "call-intelligence-pipeline contributors" }]
-keywords = ["call-center", "speech-to-text", "asr", "call-quality", "qa", "transcription", "sentiment", "gemini", "bengali"]
+keywords = ["call-center", "speech-to-text", "asr", "call-quality", "qa", "transcription", "sentiment", "openai-compatible", "bengali"]
 classifiers = [
     "Programming Language :: Python :: 3",
     "License :: OSI Approved :: MIT License",
@@ -20,7 +20,7 @@ classifiers = [
 dependencies = []
 
 [project.optional-dependencies]
-# Google Gemini backend — best Bengali accuracy, free tier 20–500 RPD.
+# Legacy Google Gemini ASR backend for backwards-compatible local CLI/demo paths.
 gemini = ["google-genai>=1.0.0"]
 # Local Bengali Whisper SAM15K ASR backend. Torch is installed from the CUDA
 # wheel index in Docker for production GPU support.
@@ -33,6 +33,8 @@ sam15000 = [
 # Reporting helpers (CSV/Excel export).
 reports = ["pandas", "openpyxl", "jinja2"]
 dev = ["pytest", "ruff"]
+
+api = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0", "python-multipart>=0.0.9"]
 
 [project.scripts]
 transcribe = "transcribe.cli:main"

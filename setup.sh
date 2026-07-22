@@ -1,10 +1,10 @@
 #!/bin/bash
 # ============================================================
-# call-intelligence-pipeline — one-command installer
+# call-intelligence-pipeline - one-command installer
 # For a fresh Ubuntu 20.04/22.04/24.04 or Debian 11/12 host.
 #
 # Installs ffmpeg + Python, creates a virtualenv, installs this
-# package with the Gemini backend, and writes a config.env.
+# package with the whisper-bn backend, and writes a config.env.
 #
 # Usage (from the repo root):
 #   bash setup.sh
@@ -12,8 +12,8 @@
 # On macOS / Windows / other Linux, skip this script and install manually:
 #   1. install ffmpeg via your package manager
 #   2. python3 -m venv .venv && source .venv/bin/activate
-#   3. pip install ".[gemini]"
-#   4. export GOOGLE_API_KEY=your_key   (get free key at aistudio.google.com)
+#   3. pip install ".[sam15000]"
+#   4. export OPENAI_API_KEY=your_key   (optional for call QA analysis)
 # ============================================================
 
 set -e
@@ -33,7 +33,7 @@ echo -e "\n${BOLD}=== call-intelligence-pipeline setup ===${NC}\n"
 # --- Privileges (only needed for apt) ---------------------------------------
 SUDO=""
 if [[ "$EUID" -ne 0 ]]; then
-    command -v sudo &>/dev/null && SUDO="sudo" || warn "Not root and no sudo — apt steps may fail."
+    command -v sudo &>/dev/null && SUDO="sudo" || warn "Not root and no sudo - apt steps may fail."
 fi
 
 # --- Detect OS ---------------------------------------------------------------
@@ -45,7 +45,7 @@ if [[ -f /etc/os-release ]]; then
         warn "This installer targets Debian/Ubuntu. For other systems, see README."
     fi
 else
-    warn "Cannot detect OS — assuming Debian/Ubuntu."
+    warn "Cannot detect OS - assuming Debian/Ubuntu."
 fi
 
 # --- System dependencies -----------------------------------------------------
@@ -64,30 +64,31 @@ python3 -m venv "$REPO_DIR/.venv"
 # shellcheck disable=SC1091
 source "$REPO_DIR/.venv/bin/activate"
 pip install --upgrade pip wheel --quiet
-pip install --quiet ".[gemini]"
-python3 -c "from google import genai" || err "google-genai import failed"
+pip install --quiet ".[sam15000]"
+python3 -c "import transcribe" || err "transcribe package import failed"
 log "Package installed in $REPO_DIR/.venv"
 
 # --- API keys ----------------------------------------------------------------
 sec "API keys"
-info "Get a free Gemini key (no card needed): https://aistudio.google.com"
-info "Up to 500 free transcriptions/day per key (gemini-3.1-flash-lite)"
-info "Add multiple keys to multiply your daily quota — see config.example.env"
+info "whisper-bn local ASR installed. For call QA, set an OpenAI-compatible endpoint."
+info "See config.example.env for OPENAI_BASE_URL, OPENAI_MODEL, and OPENAI_API_KEY."
 echo ""
 
-read -r -p "Gemini API key (leave blank to set later): " GEMINI_KEY
-read -r -p "Gemini model   [gemini-3.1-flash-lite]:    " GEMINI_MODEL
-GEMINI_MODEL="${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+read -r -p "OpenAI-compatible API key for QA (leave blank to set later): " OPENAI_API_KEY
+read -r -p "Analysis model [gpt-4o-mini]: " OPENAI_MODEL
+OPENAI_MODEL="${OPENAI_MODEL:-gpt-4o-mini}"
 
 # --- config.env --------------------------------------------------------------
 sec "Writing config.env"
 {
     echo "# Written by setup.sh"
-    echo "GEMINI_MODEL=${GEMINI_MODEL}"
-    [[ -n "$GEMINI_KEY" ]] && echo "GOOGLE_API_KEY=${GEMINI_KEY}"
+    echo "MODEL_PROVIDER=whisper-bn"
+    echo "OPENAI_BASE_URL=https://api.openai.com/v1"
+    echo "OPENAI_MODEL=${OPENAI_MODEL}"
+    [[ -n "$OPENAI_API_KEY" ]] && echo "OPENAI_API_KEY=${OPENAI_API_KEY}"
 } > "$REPO_DIR/config.env"
-log "Wrote config.env (GEMINI_MODEL=${GEMINI_MODEL})"
-[[ -z "$GEMINI_KEY" ]] && warn "No Gemini key set — add GOOGLE_API_KEY to config.env before use."
+log "Wrote config.env (MODEL_PROVIDER=whisper-bn, OPENAI_MODEL=${OPENAI_MODEL})"
+[[ -z "$OPENAI_API_KEY" ]] && warn "No QA key set - add OPENAI_API_KEY to config.env before running transcribe-analyze."
 
 # --- Done --------------------------------------------------------------------
 echo -e "\n${BOLD}${GREEN}=== Setup complete ===${NC}\n"

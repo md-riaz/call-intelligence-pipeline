@@ -1,12 +1,14 @@
 """
-Call quality analysis using Google Gemini.
+Call quality analysis using any OpenAI-compatible Chat Completions endpoint.
 
 Reads transcript .json files produced by the transcription pipeline, sends
-the conversation text to Gemini with a structured prompt, and appends an
+the conversation text to a configured OpenAI-compatible model, and appends an
 'analysis' block back into the same JSON file.
 
-Also writes an analysis_summary.csv covering all analyzed calls in a
-directory — useful for management review and agent coaching.
+Configure with environment variables or CLI flags:
+    OPENAI_API_KEY       API key for the compatible endpoint
+    OPENAI_BASE_URL      Base URL, default https://api.openai.com/v1
+    OPENAI_MODEL         Model name, default gpt-4o-mini
 
 Usage:
     transcribe-analyze --file transcripts/call.json
@@ -19,14 +21,18 @@ from __future__ import annotations
 import csv
 import json
 import logging
+import os
 import time
+import urllib.error
+import urllib.request
 from dataclasses import asdict, dataclass
 from pathlib import Path
 from typing import Optional
 
-from .key_pool import AllKeysExhaustedError, GeminiKeyPool, _is_rate_limit_error  # noqa: F401
-
 log = logging.getLogger(__name__)
+
+_DEFAULT_BASE_URL = "https://api.openai.com/v1"
+_DEFAULT_MODEL = "gpt-4o-mini"
 
 _PROMPT_TEMPLATE = """\
 You are a call quality analyst. Analyze the following customer service call transcript.
@@ -39,14 +45,14 @@ Return ONLY a valid JSON object with exactly these fields (no markdown, no expla
 {{
   "brand":              "the company or product/service name mentioned in the call, or null if not identifiable",
   "issue_category":     one of ["billing","technical","sales","complaint","inquiry","other"],
-  "issue_summary":      "one sentence — what did the customer need?",
+  "issue_summary":      "one sentence - what did the customer need?",
   "resolution":         one of ["resolved","unresolved","escalated","partial"],
-  "resolution_note":    "one sentence — what was resolved or left open?",
+  "resolution_note":    "one sentence - what was resolved or left open?",
   "customer_sentiment": one of ["satisfied","neutral","frustrated","angry"],
   "sentiment_score":    integer 1 (very negative) to 5 (very positive),
-  "agent_score":        integer 0–100 overall quality score,
-  "agent_flags":        ["specific problems observed — empty list if none"],
-  "strengths":          ["specific things the agent did well — empty list if none"],
+  "agent_score":        integer 0-100 overall quality score,
+  "agent_flags":        ["specific problems observed - empty list if none"],
+  "strengths":          ["specific things the agent did well - empty list if none"],
   "coaching_tip":       "one actionable sentence to improve this agent's performance"
 }}
 """
@@ -71,46 +77,79 @@ class CallAnalysis:
 
 
 class CallAnalyzer:
-    """Analyzes transcript JSON files using Google Gemini."""
+    """Analyzes transcript JSON files via an OpenAI-compatible endpoint."""
 
     def __init__(
         self,
         api_key: Optional[str] = None,
-        model_id: str = "gemini-3.1-flash-lite",
-        key_pool: Optional[GeminiKeyPool] = None,
+        model_id: Optional[str] = None,
+        base_url: Optional[str] = None,
+        timeout_seconds: int = 120,
     ):
-        self.model_id = model_id
-        try:
-            from google import genai  # noqa: F401
-        except ImportError:
-            raise SystemExit("google-genai not installed. Run: pip install '.[gemini]'")
-        self._pool = key_pool or GeminiKeyPool.from_env(explicit_key=api_key)
+        self.api_key = api_key or os.getenv("OPENAI_API_KEY")
+        self.base_url = (base_url or os.getenv("OPENAI_BASE_URL") or _DEFAULT_BASE_URL).rstrip("/")
+        self.model_id = model_id or os.getenv("OPENAI_MODEL") or _DEFAULT_MODEL
+        self.timeout_seconds = timeout_seconds
+        if not self.api_key:
+            raise SystemExit(
+                "OpenAI-compatible analysis API key is required. "
+                "Set OPENAI_API_KEY or pass --api-key."
+            )
         log.info(
-            "CallAnalyzer ready (model=%s, keys=%d)",
-            self.model_id, self._pool.total_count,
+            "CallAnalyzer ready (provider=openai-compatible, base_url=%s, model=%s)",
+            self.base_url,
+            self.model_id,
         )
 
     # ------------------------------------------------------------------
     # Internal
     # ------------------------------------------------------------------
 
-    def _call_with_rotation(self, prompt: str, types):
-        """Call generate_content with automatic key rotation on 429."""
-        while True:
-            client, key_idx = self._pool.get_client()
-            try:
-                return client.models.generate_content(
-                    model=self.model_id,
-                    contents=prompt,
-                    config=types.GenerateContentConfig(
-                        response_mime_type="application/json",
-                    ),
-                )
-            except Exception as e:
-                if _is_rate_limit_error(e):
-                    self._pool.mark_exhausted(key_idx)
-                    continue
-                raise
+    def _chat_completions_url(self) -> str:
+        return f"{self.base_url}/chat/completions"
+
+    def _call_model(self, prompt: str) -> str:
+        """Call an OpenAI-compatible /chat/completions endpoint."""
+        payload = {
+            "model": self.model_id,
+            "messages": [
+                {
+                    "role": "system",
+                    "content": "You are a precise call QA analyst. Return strict JSON only.",
+                },
+                {"role": "user", "content": prompt},
+            ],
+            "temperature": 0.1,
+            "response_format": {"type": "json_object"},
+        }
+        data = json.dumps(payload).encode("utf-8")
+        req = urllib.request.Request(
+            self._chat_completions_url(),
+            data=data,
+            headers={
+                "Authorization": f"Bearer {self.api_key}",
+                "Content-Type": "application/json",
+            },
+            method="POST",
+        )
+        try:
+            with urllib.request.urlopen(req, timeout=self.timeout_seconds) as resp:
+                body = resp.read().decode("utf-8")
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise RuntimeError(
+                f"OpenAI-compatible analysis request failed: HTTP {exc.code}: {detail}"
+            ) from exc
+        except urllib.error.URLError as exc:
+            raise RuntimeError(
+                f"OpenAI-compatible analysis request failed: {exc.reason}"
+            ) from exc
+
+        try:
+            parsed = json.loads(body)
+            return parsed["choices"][0]["message"]["content"] or "{}"
+        except (KeyError, IndexError, TypeError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"Unexpected analysis response shape: {body[:500]}") from exc
 
     # ------------------------------------------------------------------
     # Single file
@@ -135,7 +174,7 @@ class CallAnalyzer:
 
         transcript = data.get("full_text", "").strip()
         if not transcript:
-            log.warning("  No transcript text in %s — skipping", path.name)
+            log.warning("  No transcript text in %s - skipping", path.name)
             return None
 
         call_id = data.get("call_id", path.stem)
@@ -145,14 +184,12 @@ class CallAnalyzer:
         prompt = _PROMPT_TEMPLATE.format(transcript=transcript)
 
         try:
-            from google.genai import types
-            response = self._call_with_rotation(prompt, types)
-            raw = (response.text or "{}").strip()
+            raw = self._call_model(prompt).strip()
             if raw.startswith("```"):
                 raw = raw.split("\n", 1)[1].rsplit("```", 1)[0]
             result = json.loads(raw)
         except Exception as e:
-            log.error("  Gemini analysis failed for %s: %s", path.name, e)
+            log.error("  OpenAI-compatible analysis failed for %s: %s", path.name, e)
             raise
 
         analysis = CallAnalysis(
@@ -169,7 +206,7 @@ class CallAnalyzer:
             strengths=result.get("strengths", []),
             coaching_tip=result.get("coaching_tip", ""),
             analyzed_at=time.strftime("%Y-%m-%d %H:%M:%S"),
-            model_used=self.model_id,
+            model_used=f"openai-compatible/{self.model_id}",
         )
 
         # Append analysis into the transcript JSON in-place
@@ -219,7 +256,7 @@ class CallAnalyzer:
                 if result:
                     newly_analyzed.append(result)
             except Exception as e:
-                log.error("  Failed: %s — %s", f.name, e)
+                log.error("  Failed: %s - %s", f.name, e)
 
         # Rebuild CSV from ALL analyzed calls in the directory
         if write_csv:

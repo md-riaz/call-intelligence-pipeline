@@ -29,9 +29,9 @@ def _setup_logging(output_dir: str) -> None:
 def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="transcribe-analyze",
-        description="Analyze call transcript JSON files with Google Gemini. "
-        "Scores agent quality, detects issue type and resolution, sentiment, "
-        "and writes a summary CSV for management review.",
+        description="Analyze call transcript JSON files with any OpenAI-compatible "
+        "Chat Completions endpoint. Scores agent quality, detects issue type "
+        "and resolution, sentiment, and writes a summary CSV for management review.",
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--file", "-f", help="A single transcript .json file to analyze")
@@ -40,13 +40,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="Directory of transcript .json files (from `transcribe` output)",
     )
     ap.add_argument(
-        "--google-api-key", default=None,
-        help="Google AI Studio API key (overrides GOOGLE_API_KEY env var)",
+        "--api-key", default=None,
+        help="OpenAI-compatible API key (overrides OPENAI_API_KEY env var)",
+    )
+    ap.add_argument(
+        "--base-url", default=None,
+        help="OpenAI-compatible base URL (default: OPENAI_BASE_URL or https://api.openai.com/v1)",
     )
     ap.add_argument(
         "--model", "-m", default=None,
-        help="Gemini model ID for analysis (default: gemini-2.5-flash). "
-             "Use gemini-3.1-flash-lite for 500 RPD free tier.",
+        help="OpenAI-compatible model name (default: OPENAI_MODEL or gpt-4o-mini)",
     )
     ap.add_argument(
         "--reanalyze", action="store_true",
@@ -69,10 +72,12 @@ def main(argv=None) -> int:
     log.info("transcribe-analyze %s", __version__)
 
     cfg = load_config()
-    model = args.model or cfg.get("GEMINI_MODEL", "gemini-3.1-flash-lite")
-    log.info("Analysis model: %s", model)
+    model = args.model or cfg.get("OPENAI_MODEL")
+    base_url = args.base_url or cfg.get("OPENAI_BASE_URL")
+    api_key = args.api_key or cfg.get("OPENAI_API_KEY")
+    log.info("Analysis provider: openai-compatible | base_url=%s | model=%s", base_url or "default", model or "default")
 
-    analyzer = CallAnalyzer(api_key=args.google_api_key, model_id=model)
+    analyzer = CallAnalyzer(api_key=api_key, model_id=model, base_url=base_url)
 
     if args.file:
         path = Path(args.file)
@@ -114,7 +119,7 @@ Brand    : {a.brand}
 Category : {a.issue_category}
 Issue    : {a.issue_summary}
 {'=' * 60}
-Resolution  : {a.resolution.upper()} — {a.resolution_note}
+Resolution  : {a.resolution.upper()} - {a.resolution_note}
 Sentiment   : {a.customer_sentiment} ({a.sentiment_score}/5)
 Agent score : {a.agent_score}/100
 {'=' * 60}

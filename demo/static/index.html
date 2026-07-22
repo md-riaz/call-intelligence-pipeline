@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Call Intelligence Pipeline</title>
+<title>whisper-bn</title>
 <style>
 *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
 
@@ -255,8 +255,8 @@ select option { background: var(--surface-3); }
 
 <header class="header">
   <span class="header-icon">🎙️</span>
-  <span class="header-title">Call Intelligence Pipeline</span>
-  <span class="header-sub">Powered by Google Gemini</span>
+  <span class="header-title">whisper-bn</span>
+  <span class="header-sub">Bengali ASR with OpenAI-compatible QA</span>
 </header>
 
 <div class="wrap">
@@ -268,33 +268,29 @@ select option { background: var(--surface-3); }
       <div class="row" style="gap:14px">
 
         <div>
-          <label for="api-keys">Gemini API Keys <span class="note">(comma-separated — each key from a separate AI Studio project adds 500 RPD free quota)</span></label>
+          <label for="analyze-api-key">Analysis API Key <span class="note">(optional - OpenAI-compatible)</span></label>
           <div class="key-wrap">
-            <input type="password" id="api-keys" placeholder="AIzaSy...key1, AIzaSy...key2" autocomplete="off" spellcheck="false">
+            <input type="password" id="analyze-api-key" placeholder="sk-..." autocomplete="off" spellcheck="false">
             <button class="key-eye" onclick="toggleKey()" title="Show/hide">👁</button>
           </div>
         </div>
 
         <div class="row r2">
           <div>
-            <label for="tx-model">Transcription Model</label>
-            <select id="tx-model">
-              <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite — 500 RPD free</option>
-              <option value="gemini-2.5-flash">gemini-2.5-flash — 20 RPD, higher quality</option>
+            <label for="tx-model">Transcription Engine</label>
+            <select id="tx-model" disabled>
+              <option value="whisper-bn">whisper-bn</option>
             </select>
           </div>
           <div>
             <label for="an-model">Analysis Model</label>
-            <select id="an-model">
-              <option value="gemini-3.1-flash-lite">gemini-3.1-flash-lite — 500 RPD free</option>
-              <option value="gemini-2.5-flash">gemini-2.5-flash — 20 RPD, higher quality</option>
-            </select>
+            <input type="text" id="an-model" value="gpt-4o-mini" placeholder="gpt-4o-mini">
           </div>
         </div>
 
         <div class="row r2">
           <div>
-            <label for="lang">Language <span class="note">(ISO code — leave blank to auto-detect)</span></label>
+            <label for="lang">Language <span class="note">(ISO code - default bn, leave blank to auto-detect)</span></label>
             <input type="text" id="lang" placeholder="e.g. bn, en, hi, ar" maxlength="10">
           </div>
           <div>
@@ -317,7 +313,7 @@ select option { background: var(--surface-3); }
            onkeydown="if(event.key==='Enter'||event.key===' ')document.getElementById('file-input').click()">
         <div class="drop-ico">📂</div>
         <div class="drop-main">Drop audio files here or <span>browse</span></div>
-        <div class="drop-sub">Multiple files supported — each is processed independently</div>
+        <div class="drop-sub">Multiple files supported - each is processed independently</div>
         <div class="drop-fmt">wav · mp3 · ogg · opus · flac · m4a · aac · amr</div>
       </div>
       <input type="file" id="file-input" multiple
@@ -417,14 +413,13 @@ document.getElementById('file-input').addEventListener('change', function() {
 
 // ── Config ───────────────────────────────────────────────────────────────────
 function toggleKey() {
-  const inp = document.getElementById('api-keys');
+  const inp = document.getElementById('analyze-api-key');
   inp.type = inp.type === 'password' ? 'text' : 'password';
 }
 
 // ── Processing ───────────────────────────────────────────────────────────────
 async function startProcessing() {
-  const apiKeys = document.getElementById('api-keys').value.trim();
-  if (!apiKeys) { alert('Please enter at least one Gemini API key.'); return; }
+  const analyzeApiKey = document.getElementById('analyze-api-key').value.trim();
   if (!files.length) { alert('Please select at least one audio file.'); return; }
 
   running = true;
@@ -452,9 +447,8 @@ async function startProcessing() {
 
   // POST + stream
   const fd = new FormData();
-  fd.append('api_keys', apiKeys);
-  fd.append('transcribe_model', document.getElementById('tx-model').value);
-  fd.append('analyze_model', document.getElementById('an-model').value);
+  fd.append('analyze_api_key', analyzeApiKey);
+  fd.append('analyze_model', document.getElementById('an-model').value.trim());
   fd.append('language', document.getElementById('lang').value.trim());
   fd.append('labels', document.getElementById('labels').value.trim() || 'Agent,Customer');
   files.forEach(f => fd.append('files', f));
@@ -608,11 +602,11 @@ function fmtAnalysis(a) {
       </div>
       <div class="an-field">
         <div class="an-label">Issue Summary</div>
-        <div class="an-val">${esc(a.issue_summary || '—')}</div>
+        <div class="an-val">${esc(a.issue_summary || '-')}</div>
       </div>
       <div class="an-field">
         <div class="an-label">Resolution Note</div>
-        <div class="an-val">${esc(a.resolution_note || '—')}</div>
+        <div class="an-val">${esc(a.resolution_note || '-')}</div>
       </div>
       <div class="an-field" style="text-align:center;padding:8px 0">
         <div class="score-big" style="color:${scColor}">${sc}</div>
@@ -630,7 +624,7 @@ function fmtAnalysis(a) {
       </div>
       <div class="an-field">
         <div class="an-label">Coaching Tip</div>
-        <div class="tip-box">${esc(a.coaching_tip || '—')}</div>
+        <div class="tip-box">${esc(a.coaching_tip || '-')}</div>
       </div>
     </div>
   </div>`;

@@ -1,7 +1,7 @@
 # Demo web server dependencies
 #
 # Install the main package first from the repo root:
-#   pip install ".[gemini]"
+#   pip install ".[sam15000]"
 #
 # Then install these:
 #   pip install -r demo/requirements.txt

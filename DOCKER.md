@@ -1,100 +1,67 @@
 # Docker deployment
 
-This repo can run as a Dockerized Flask demo app, with the CLI available inside the same image.
+This repo runs the public `whisper-bn` FastAPI transcription queue in Docker.
 
-## Build
-
-```bash
-docker compose build
-```
-
-## Run the demo UI
+## Build and run
 
 ```bash
-docker compose up -d
+docker compose up -d --build call-intelligence-pipeline
 ```
 
 Open:
 
 ```text
-http://SERVER_IP:3433
+http://SERVER_IP:3433/docs
 ```
 
-The demo UI lets you paste Gemini API keys directly in the browser. You can also pass keys as environment variables:
+Health check:
 
 ```bash
-GOOGLE_API_KEYS="key1,key2,key3" docker compose up -d
+curl http://SERVER_IP:3433/health
 ```
 
-Optional settings:
+Submit a transcription job:
 
 ```bash
-# The container uses host networking on this server, so PORT is the host port.
-PORT=3433
-GEMINI_MODEL=gemini-3.1-flash-lite
-WEB_CONCURRENCY=2
-WEB_THREADS=4
-WEB_TIMEOUT=300
+curl -F "file=@samples/call.wav" -F "language=bn" -F "labels=Agent,Customer"   http://SERVER_IP:3433/v1/transcriptions
 ```
 
-## Run CLI commands in Docker
-
-Single file:
+Check a job:
 
 ```bash
-docker compose run --rm call-intelligence-pipeline \
-  transcribe --file /app/samples/call.wav --output /app/transcripts --language bn --labels "Agent,Customer"
-```
-
-Batch folder:
-
-```bash
-docker compose run --rm call-intelligence-pipeline \
-  transcribe --input /app/samples --output /app/transcripts --language bn --labels "Agent,Customer"
-```
-
-Analyze transcripts:
-
-```bash
-docker compose run --rm call-intelligence-pipeline \
-  transcribe-analyze --input /app/transcripts
+curl http://SERVER_IP:3433/v1/transcriptions/JOB_ID
 ```
 
 ## Volumes
 
-- `./samples` mounts read-only to `/app/samples` for input audio.
-- `./transcripts` mounts read-write to `/app/transcripts` for outputs.
+- `./samples` mounts read-only to `/app/samples` for optional local input audio.
+- `./transcripts` mounts read-write to `/app/transcripts` for uploads, SQLite queue state, and outputs.
+- `call-intelligence-models` mounts at `/models` for Hugging Face cache.
 
-Audio samples and transcripts may contain private call data and are git-ignored.
+Do not prune `call-intelligence-models` if you want to preserve model downloads.
+
+## Settings
+
+```bash
+PORT=3433
+MODEL_PROVIDER=whisper-bn
+WHISPER_MODEL=bitwisemind/sam_15000_clean_text_full_model
+ASR_QUEUE_DB=/app/transcripts/transcription_queue.sqlite3
+ASR_UPLOAD_DIR=/app/transcripts/uploads
+ASR_OUTPUT_DIR=/app/transcripts
+CUDA_VISIBLE_DEVICES=0
+```
+
+OpenAI-compatible QA analysis is a CLI feature. Provide these only when running `transcribe-analyze`:
+
+```bash
+OPENAI_API_KEY=sk-...
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_MODEL=gpt-4o-mini
+```
 
 ## Host reverse proxy
 
 This compose file uses `network_mode: host` because the current server's Docker bridge DNS cannot resolve package repositories or external API hosts. The app listens on `0.0.0.0:${PORT:-3433}` on the host.
 
 If you later fix Docker daemon DNS and want Traefik Docker-label routing, create a separate override file that removes `network_mode: host`, restores a bridge network and `ports`, then adds Traefik labels. Do not edit production Traefik services directly.
-
-
-## Local Bengali ASR with SAM15K
-
-The Compose setup keeps Gemini as the default provider for backwards compatibility. To run local Bengali ASR on GPU 0:
-
-```bash
-MODEL_PROVIDER=whisper-sam15000 CUDA_VISIBLE_DEVICES=0 docker compose up -d --build call-intelligence-pipeline
-```
-
-The first transcription downloads `bitwisemind/sam_15000_clean_text_full_model` into the named Docker volume `call-intelligence-models`, mounted at `/models` through `HF_HOME=/models`. Do not prune this volume if you want to preserve the model cache.
-
-Run the CLI inside the container:
-
-```bash
-docker compose run --rm --no-deps \
-  -e MODEL_PROVIDER=whisper-sam15000 \
-  call-intelligence-pipeline \
-  transcribe --file /app/samples/call.wav --engine whisper-sam15000 --language bn --labels "Agent,Customer"
-```
-
-For the second GPU, start the optional profile on port 3434:
-
-```bash
-docker compose --profile gpu1 up -d call-intelligence-pipeline-gpu1
-```

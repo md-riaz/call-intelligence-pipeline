@@ -1,6 +1,6 @@
 # syntax=docker/dockerfile:1
 # CUDA 12.8 runtime keeps the image compatible with newer NVIDIA GPUs such as
-# RTX 50-series while still allowing Gemini-only usage when no local ASR is used.
+# RTX 50-series for the local whisper-bn ASR service.
 FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
@@ -9,7 +9,9 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
     PORT=3433 \
     HF_HOME=/models \
     TRANSFORMERS_CACHE=/models \
-    MODEL_PROVIDER=gemini \
+    MODEL_PROVIDER=whisper-bn \
+    OPENAI_BASE_URL=https://api.openai.com/v1 \
+    OPENAI_MODEL=gpt-4o-mini \
     WHISPER_MODEL=bitwisemind/sam_15000_clean_text_full_model \
     CUDA_VISIBLE_DEVICES=0 \
     VIRTUAL_ENV=/opt/venv \
@@ -35,7 +37,7 @@ COPY transcribe ./transcribe
 COPY demo/requirements.txt ./demo/requirements.txt
 
 RUN pip install --index-url https://download.pytorch.org/whl/cu128 torch \
-    && pip install ".[gemini,sam15000]" \
+    && pip install ".[sam15000,api]" \
     && pip install -r requirements.txt \
     && pip install -r demo/requirements.txt
 
@@ -53,4 +55,4 @@ EXPOSE 3433
 HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
     CMD python -c 'import os, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/" % os.environ.get("PORT", "3433"), timeout=3).read(1)' || exit 1
 
-CMD ["sh", "-c", "gunicorn --bind 0.0.0.0:${PORT:-3433} --workers ${WEB_CONCURRENCY:-2} --worker-class gthread --threads ${WEB_THREADS:-4} --timeout ${WEB_TIMEOUT:-300} demo.app:app"]
+CMD ["sh", "-c", "uvicorn transcribe.api:app --host 0.0.0.0 --port ${PORT:-3433}"]

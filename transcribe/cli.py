@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="transcribe",
         description="Transcribe audio call recordings into speaker-labelled text "
-        "using Gemini or optional local Bengali Whisper ASR backends.",
+        "using the local Bengali whisper-bn ASR backend.",
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", "-i", help="Directory of recordings (processed recursively)")
@@ -45,9 +45,9 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--engine",
-        choices=("gemini", "whisper-sam15000", "whisper-tugstugi"),
+        choices=("whisper-bn", "whisper-sam15000", "whisper-tugstugi", "gemini"),
         default=None,
-        help="ASR engine. Defaults to MODEL_PROVIDER or gemini.",
+        help="ASR engine. Defaults to MODEL_PROVIDER or whisper-bn.",
     )
     ap.add_argument(
         "--model", "-m", default=None,
@@ -77,7 +77,7 @@ def main(argv=None) -> int:
     cfg = load_config()
     language = None if (args.language in (None, "auto")) else args.language
     labels = tuple((args.labels.split(",", 1) + ["Speaker B"])[:2])
-    engine = args.engine or cfg.get("MODEL_PROVIDER", "gemini")
+    engine = args.engine or cfg.get("MODEL_PROVIDER", "whisper-bn")
     if engine == "gemini":
         gemini_model = args.model or cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
         whisper_model = cfg.get("WHISPER_MODEL")

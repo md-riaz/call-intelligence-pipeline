@@ -60,19 +60,19 @@ def create_backend(
     temp_dir: Optional[str] = None,
 ) -> ASRBackend:
     """Instantiate an ASR backend by CLI/config engine name."""
-    selected = (engine or os.getenv("MODEL_PROVIDER") or "gemini").strip().lower()
+    selected = (engine or os.getenv("MODEL_PROVIDER") or "whisper-bn").strip().lower()
     if selected == "gemini":
         from .gemini import GeminiBackend
 
         return GeminiBackend(api_key=google_api_key, model_id=gemini_model_id)
 
-    if selected in {"whisper-sam15000", "sam15000", "whisper_sam15000"}:
+    if selected in {"whisper-bn", "whisper_bn", "whisper-sam15000", "sam15000", "whisper_sam15000"}:
         from .whisper_sam15000 import WhisperSam15000Backend
 
         return WhisperSam15000Backend(
             model_id=whisper_model_id,
             temp_dir=temp_dir,
-            provider_name="whisper-sam15000",
+            provider_name="whisper-bn" if selected in {"whisper-bn", "whisper_bn"} else "whisper-sam15000",
         )
 
     if selected in {"whisper-tugstugi", "tugstugi", "bengaliai-whisper-medium"}:
@@ -86,5 +86,5 @@ def create_backend(
 
     raise ValueError(
         f"Unsupported ASR engine: {engine!r}. "
-        "Supported engines: gemini, whisper-sam15000, whisper-tugstugi"
+        "Supported engines: whisper-bn"
     )
