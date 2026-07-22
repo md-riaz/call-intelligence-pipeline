@@ -124,3 +124,33 @@ def test_key_pool_rotation():
         assert False, "Should have raised AllKeysExhaustedError"
     except AllKeysExhaustedError:
         pass
+
+
+def test_cli_parses_engine_whisper_sam15000():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--engine", "whisper-sam15000", "--language", "bn"]
+    )
+    assert args.engine == "whisper-sam15000"
+    assert args.language == "bn"
+
+
+def test_backend_factory_rejects_unknown_engine():
+    import pytest
+    from transcribe.backends.base import create_backend
+
+    with pytest.raises(ValueError):
+        create_backend("not-real")
+
+
+def test_whisper_timestamp_pair():
+    from transcribe.backends.whisper_sam15000 import _timestamp_pair
+
+    assert _timestamp_pair((None, 2.5)) == (0.0, 2.5)
+    assert _timestamp_pair((1, None)) == (1.0, 1.0)
+
+
+def test_whisper_segments_to_text():
+    from transcribe.backends.whisper_sam15000 import _segments_to_text
+
+    text = _segments_to_text([{"speaker": "Agent", "text": "হ্যালো"}])
+    assert text == "[Agent]: হ্যালো"

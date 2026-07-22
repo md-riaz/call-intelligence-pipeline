@@ -2,9 +2,9 @@
 Transcription pipeline: orchestrates preprocessing, transcription, and output
 writing (JSON + TXT + SRT).
 
-Transcription backend: Google Gemini — free tier 500 RPD (gemini-3.1-flash-lite)
-or 20 RPD (gemini-2.5-flash). Handles stereo speaker separation natively via
-prompt. Multiple API keys multiply the daily quota automatically.
+Transcription backends are pluggable. Gemini remains the default remote ASR
+provider, and whisper-sam15000 adds local GPU Bengali ASR for deployments that
+need on-prem transcription.
 """
 
 from __future__ import annotations
@@ -60,6 +60,8 @@ class TranscriptionPipeline:
         write_srt: bool = True,
         google_api_key: Optional[str] = None,
         gemini_model_id: str = "gemini-3.1-flash-lite",
+        engine: str = "gemini",
+        whisper_model_id: Optional[str] = None,
     ):
         self.output_dir = Path(output_dir)
         self.temp_dir = Path(temp_dir or output_dir) / "_temp"
@@ -70,11 +72,17 @@ class TranscriptionPipeline:
         self.separate_speakers = separate_speakers
         self.write_srt = write_srt
 
-        from .gemini_engine import GeminiTranscriber
-        self.transcriber = GeminiTranscriber(
-            api_key=google_api_key, model_id=gemini_model_id
+        from .backends import create_backend
+
+        self.engine = engine
+        self.transcriber = create_backend(
+            engine,
+            google_api_key=google_api_key,
+            gemini_model_id=gemini_model_id,
+            whisper_model_id=whisper_model_id,
+            temp_dir=str(self.temp_dir),
         )
-        self._model_label = f"gemini/{self.transcriber.model_id}"
+        self._model_label = f"{self.transcriber.name}/{self.transcriber.model_id}"
 
         self.processed_log = self.output_dir / "processed_files.json"
         self.processed = self._load_processed()

@@ -1,25 +1,41 @@
 # syntax=docker/dockerfile:1
-FROM python:3.12-slim AS runtime
+# CUDA 12.8 runtime keeps the image compatible with newer NVIDIA GPUs such as
+# RTX 50-series while still allowing Gemini-only usage when no local ASR is used.
+FROM nvidia/cuda:12.8.1-cudnn-runtime-ubuntu24.04 AS runtime
 
 ENV PYTHONDONTWRITEBYTECODE=1 \
     PYTHONUNBUFFERED=1 \
     PIP_NO_CACHE_DIR=1 \
-    PORT=3433
+    PORT=3433 \
+    HF_HOME=/models \
+    TRANSFORMERS_CACHE=/models \
+    MODEL_PROVIDER=gemini \
+    WHISPER_MODEL=bitwisemind/sam_15000_clean_text_full_model \
+    CUDA_VISIBLE_DEVICES=0 \
+    VIRTUAL_ENV=/opt/venv \
+    PATH="/opt/venv/bin:$PATH"
 
 WORKDIR /app
 
 RUN apt-get update \
     && apt-get install -y --no-install-recommends \
+        python3 \
+        python3-venv \
+        python3-pip \
+        python-is-python3 \
         ffmpeg \
         ca-certificates \
     && rm -rf /var/lib/apt/lists/*
+
+RUN python -m venv /opt/venv \
+    && /opt/venv/bin/python -m pip install --upgrade pip setuptools wheel
 
 COPY pyproject.toml README.md LICENSE requirements.txt ./
 COPY transcribe ./transcribe
 COPY demo/requirements.txt ./demo/requirements.txt
 
-RUN python -m pip install --upgrade pip \
-    && pip install ".[gemini]" \
+RUN pip install --index-url https://download.pytorch.org/whl/cu128 torch \
+    && pip install ".[gemini,sam15000]" \
     && pip install -r requirements.txt \
     && pip install -r demo/requirements.txt
 
@@ -27,8 +43,8 @@ COPY demo ./demo
 COPY config.example.env ./config.example.env
 
 RUN useradd --create-home --shell /usr/sbin/nologin appuser \
-    && mkdir -p /app/samples /app/transcripts \
-    && chown -R appuser:appuser /app
+    && mkdir -p /app/samples /app/transcripts /models \
+    && chown -R appuser:appuser /app /models /opt/venv
 
 USER appuser
 

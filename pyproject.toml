@@ -22,6 +22,14 @@ dependencies = []
 [project.optional-dependencies]
 # Google Gemini backend — best Bengali accuracy, free tier 20–500 RPD.
 gemini = ["google-genai>=1.0.0"]
+# Local Bengali Whisper SAM15K ASR backend. Torch is installed from the CUDA
+# wheel index in Docker for production GPU support.
+sam15000 = [
+    "transformers>=4.46.0",
+    "accelerate>=0.34.0",
+    "librosa>=0.10.0",
+    "soundfile>=0.12.0",
+]
 # Reporting helpers (CSV/Excel export).
 reports = ["pandas", "openpyxl", "jinja2"]
 dev = ["pytest", "ruff"]
@@ -34,5 +42,5 @@ transcribe-analyze = "transcribe.analyze_cli:main"
 Homepage = "https://github.com/md-riaz/call-intelligence-pipeline"
 Issues = "https://github.com/md-riaz/call-intelligence-pipeline/issues"
 
-[tool.setuptools]
-packages = ["transcribe"]
+[tool.setuptools.packages.find]
+include = ["transcribe", "transcribe.*"]

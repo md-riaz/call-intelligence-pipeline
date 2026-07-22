@@ -9,3 +9,10 @@ faster-whisper>=1.0.0
 # NOTE: ffmpeg is a SYSTEM dependency, not a pip package. Install it via your
 # OS package manager (apt install ffmpeg / brew install ffmpeg / choco install ffmpeg)
 # or let setup.sh handle it on Debian/Ubuntu.
+
+# Local HuggingFace Whisper SAM15K backend.
+# Docker installs the CUDA torch wheel explicitly before these packages.
+transformers>=4.46.0
+accelerate>=0.34.0
+librosa>=0.10.0
+soundfile>=0.12.0

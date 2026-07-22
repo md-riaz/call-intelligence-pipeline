@@ -13,7 +13,13 @@ services:
     network_mode: host
     environment:
       PORT: "${PORT:-3433}"
+      MODEL_PROVIDER: "${MODEL_PROVIDER:-gemini}"
       GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+      WHISPER_MODEL: "${WHISPER_MODEL:-bitwisemind/sam_15000_clean_text_full_model}"
+      HF_HOME: "${HF_HOME:-/models}"
+      TRANSFORMERS_CACHE: "${TRANSFORMERS_CACHE:-/models}"
+      CUDA_VISIBLE_DEVICES: "${CUDA_VISIBLE_DEVICES:-0}"
+      ASR_BATCH_SIZE: "${ASR_BATCH_SIZE:-2}"
       GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
       GOOGLE_API_KEYS: "${GOOGLE_API_KEYS:-}"
       GOOGLE_API_KEY_1: "${GOOGLE_API_KEY_1:-}"
@@ -25,9 +31,49 @@ services:
     volumes:
       - ./samples:/app/samples:ro
       - ./transcripts:/app/transcripts
+      - call-intelligence-models:/models
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: 1
+              capabilities: [gpu]
     healthcheck:
-      test: ["CMD-SHELL", "python -c 'import os, urllib.request; urllib.request.urlopen(\"http://127.0.0.1:%s/\" % os.environ.get(\"PORT\", \"3433\"), timeout=3).read(1)'"]
+      test:
+        - CMD-SHELL
+        - >-
+          python -c 'import os, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/" % os.environ.get("PORT", "3433"), timeout=3).read(1)'
       interval: 30s
       timeout: 5s
       start_period: 20s
       retries: 3
+
+  # Optional second GPU worker. Use with a different PORT to avoid host-network
+  # conflicts, for example:
+  #   PORT=3434 CUDA_VISIBLE_DEVICES=1 docker compose up -d call-intelligence-pipeline-gpu1
+  call-intelligence-pipeline-gpu1:
+    profiles: ["gpu1"]
+    extends:
+      service: call-intelligence-pipeline
+    container_name: call-intelligence-pipeline-gpu1
+    environment:
+      PORT: "${PORT_GPU1:-3434}"
+      MODEL_PROVIDER: "${MODEL_PROVIDER_GPU1:-whisper-sam15000}"
+      GEMINI_MODEL: "${GEMINI_MODEL:-gemini-3.1-flash-lite}"
+      WHISPER_MODEL: "${WHISPER_MODEL:-bitwisemind/sam_15000_clean_text_full_model}"
+      HF_HOME: "${HF_HOME:-/models}"
+      TRANSFORMERS_CACHE: "${TRANSFORMERS_CACHE:-/models}"
+      CUDA_VISIBLE_DEVICES: "${CUDA_VISIBLE_DEVICES_GPU1:-1}"
+      ASR_BATCH_SIZE: "${ASR_BATCH_SIZE:-2}"
+      GOOGLE_API_KEY: "${GOOGLE_API_KEY:-}"
+      GOOGLE_API_KEYS: "${GOOGLE_API_KEYS:-}"
+      GOOGLE_API_KEY_1: "${GOOGLE_API_KEY_1:-}"
+      GOOGLE_API_KEY_2: "${GOOGLE_API_KEY_2:-}"
+      GOOGLE_API_KEY_3: "${GOOGLE_API_KEY_3:-}"
+      WEB_CONCURRENCY: "${WEB_CONCURRENCY_GPU1:-1}"
+      WEB_THREADS: "${WEB_THREADS_GPU1:-2}"
+      WEB_TIMEOUT: "${WEB_TIMEOUT:-300}"
+
+volumes:
+  call-intelligence-models:

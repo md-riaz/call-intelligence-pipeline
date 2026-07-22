@@ -463,3 +463,63 @@ to [Google AI Terms](https://ai.google.dev/terms).
 
 - [Google Gemini](https://ai.google.dev/)
 - [ffmpeg](https://ffmpeg.org/)
+
+
+## ASR engines: Gemini and local Bengali Whisper SAM15K
+
+The transcription CLI now supports pluggable ASR providers. Gemini remains available and is the default for backwards compatibility. Local Bengali ASR is available through HuggingFace Transformers using `bitwisemind/sam_15000_clean_text_full_model`.
+
+### Gemini mode
+
+```bash
+transcribe --file call.wav --engine gemini --language bn --labels "Agent,Customer"
+```
+
+Gemini uses `GOOGLE_API_KEY`, `GOOGLE_API_KEYS`, or numbered keys from the environment, and writes the same JSON/TXT/SRT transcript schema as before.
+
+### Local Bengali ASR mode
+
+```bash
+transcribe \
+  --file call.wav \
+  --engine whisper-sam15000 \
+  --language bn \
+  --labels "Agent,Customer"
+```
+
+FusionPBX stereo recordings are handled without AI diarization: channel 0 is treated as `Agent`, channel 1 is treated as `Customer`, both channels are transcribed independently, then segments are merged chronologically. Mono recordings are transcribed as the first label.
+
+### Docker GPU usage
+
+The Docker image uses an NVIDIA CUDA runtime and installs PyTorch CUDA wheels, `transformers`, `accelerate`, `librosa`, and `soundfile`. The first local ASR run downloads the model into `/models`, which is mounted as a persistent Docker volume so future runs do not re-download weights.
+
+```bash
+# Gemini-compatible default
+docker compose up -d call-intelligence-pipeline
+
+# Local Bengali ASR on GPU 0
+MODEL_PROVIDER=whisper-sam15000 CUDA_VISIBLE_DEVICES=0 docker compose up -d call-intelligence-pipeline
+
+# Optional second worker on GPU 1 and port 3434
+docker compose --profile gpu1 up -d call-intelligence-pipeline-gpu1
+```
+
+Useful environment variables:
+
+- `MODEL_PROVIDER=gemini|whisper-sam15000`
+- `WHISPER_MODEL=bitwisemind/sam_15000_clean_text_full_model`
+- `HF_HOME=/models`
+- `CUDA_VISIBLE_DEVICES=0` or `1`
+- `ASR_BATCH_SIZE=2` for channel/batch inference
+
+### Migration notes
+
+No analyzer migration is required. `CallAnalyzer` continues reading transcript JSON unchanged. Existing Gemini commands continue to work, while local ASR can be enabled per command with `--engine whisper-sam15000` or at container level with `MODEL_PROVIDER=whisper-sam15000`.
+
+### Test coverage
+
+Recommended validation:
+
+1. Bangla mono audio: run `transcribe --engine whisper-sam15000 --language bn --file bangla.wav`. Expect Bengali text in JSON/TXT/SRT.
+2. FusionPBX stereo audio: run with `--labels "Agent,Customer"`. Expect channel 0 as Agent and channel 1 as Customer with chronological segment ordering.
+3. Gemini no-regression: run `transcribe --engine gemini --file call.wav` with a valid Gemini key and verify the same JSON schema.

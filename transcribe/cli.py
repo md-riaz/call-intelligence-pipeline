@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="transcribe",
         description="Transcribe audio call recordings into speaker-labelled text "
-        "using Google Gemini.",
+        "using Gemini or local Whisper SAM15K Bengali ASR.",
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", "-i", help="Directory of recordings (processed recursively)")
@@ -44,9 +44,16 @@ def build_parser() -> argparse.ArgumentParser:
         help="ISO language code to force (e.g. bn, en, hi). Omit for auto-detect.",
     )
     ap.add_argument(
+        "--engine",
+        choices=("gemini", "whisper-sam15000"),
+        default=None,
+        help="ASR engine. Defaults to MODEL_PROVIDER or gemini.",
+    )
+    ap.add_argument(
         "--model", "-m", default=None,
-        help="Gemini model ID. gemini-3.1-flash-lite (default, 500 RPD free) or "
-             "gemini-2.5-flash (higher quality, 20 RPD free).",
+        help="Backend model ID. For Gemini: gemini-3.1-flash-lite (default) or "
+             "gemini-2.5-flash. For whisper-sam15000, omit unless overriding "
+             "WHISPER_MODEL.",
     )
     ap.add_argument("--days", "-d", type=int, default=None,
                     help="With --input: only files modified in the last N days")
@@ -70,11 +77,21 @@ def main(argv=None) -> int:
     cfg = load_config()
     language = None if (args.language in (None, "auto")) else args.language
     labels = tuple((args.labels.split(",", 1) + ["Speaker B"])[:2])
-    model = args.model or cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
+    engine = args.engine or cfg.get("MODEL_PROVIDER", "gemini")
+    if engine == "gemini":
+        gemini_model = args.model or cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
+        whisper_model = cfg.get("WHISPER_MODEL")
+        model_for_log = gemini_model
+    else:
+        gemini_model = cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
+        whisper_model = args.model or cfg.get(
+            "WHISPER_MODEL", "bitwisemind/sam_15000_clean_text_full_model"
+        )
+        model_for_log = whisper_model
 
     log.info(
-        "call-intelligence-pipeline %s | model=%s | lang=%s",
-        __version__, model, language or "auto",
+        "call-intelligence-pipeline %s | engine=%s | model=%s | lang=%s",
+        __version__, engine, model_for_log, language or "auto",
     )
 
     pipeline = TranscriptionPipeline(
@@ -83,7 +100,9 @@ def main(argv=None) -> int:
         speaker_labels=labels,
         write_srt=not args.no_srt,
         google_api_key=args.google_api_key,
-        gemini_model_id=model,
+        gemini_model_id=gemini_model,
+        engine=engine,
+        whisper_model_id=whisper_model,
     )
 
     if args.file:

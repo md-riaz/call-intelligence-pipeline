@@ -72,3 +72,29 @@ Audio samples and transcripts may contain private call data and are git-ignored.
 This compose file uses `network_mode: host` because the current server's Docker bridge DNS cannot resolve package repositories or external API hosts. The app listens on `0.0.0.0:${PORT:-3433}` on the host.
 
 If you later fix Docker daemon DNS and want Traefik Docker-label routing, create a separate override file that removes `network_mode: host`, restores a bridge network and `ports`, then adds Traefik labels. Do not edit production Traefik services directly.
+
+
+## Local Bengali ASR with SAM15K
+
+The Compose setup keeps Gemini as the default provider for backwards compatibility. To run local Bengali ASR on GPU 0:
+
+```bash
+MODEL_PROVIDER=whisper-sam15000 CUDA_VISIBLE_DEVICES=0 docker compose up -d --build call-intelligence-pipeline
+```
+
+The first transcription downloads `bitwisemind/sam_15000_clean_text_full_model` into the named Docker volume `call-intelligence-models`, mounted at `/models` through `HF_HOME=/models`. Do not prune this volume if you want to preserve the model cache.
+
+Run the CLI inside the container:
+
+```bash
+docker compose run --rm --no-deps \
+  -e MODEL_PROVIDER=whisper-sam15000 \
+  call-intelligence-pipeline \
+  transcribe --file /app/samples/call.wav --engine whisper-sam15000 --language bn --labels "Agent,Customer"
+```
+
+For the second GPU, start the optional profile on port 3434:
+
+```bash
+docker compose --profile gpu1 up -d call-intelligence-pipeline-gpu1
+```
