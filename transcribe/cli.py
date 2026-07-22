@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     ap = argparse.ArgumentParser(
         prog="transcribe",
         description="Transcribe audio call recordings into speaker-labelled text "
-        "using Gemini or local Whisper SAM15K Bengali ASR.",
+        "using Gemini or optional local Bengali Whisper ASR backends.",
     )
     src = ap.add_mutually_exclusive_group(required=True)
     src.add_argument("--input", "-i", help="Directory of recordings (processed recursively)")
@@ -45,7 +45,7 @@ def build_parser() -> argparse.ArgumentParser:
     )
     ap.add_argument(
         "--engine",
-        choices=("gemini", "whisper-sam15000"),
+        choices=("gemini", "whisper-sam15000", "whisper-tugstugi"),
         default=None,
         help="ASR engine. Defaults to MODEL_PROVIDER or gemini.",
     )
@@ -53,7 +53,7 @@ def build_parser() -> argparse.ArgumentParser:
         "--model", "-m", default=None,
         help="Backend model ID. For Gemini: gemini-3.1-flash-lite (default) or "
              "gemini-2.5-flash. For whisper-sam15000, omit unless overriding "
-             "WHISPER_MODEL.",
+             "WHISPER_MODEL. For whisper-tugstugi, omit to use BengaliAI Tugstugi.",
     )
     ap.add_argument("--days", "-d", type=int, default=None,
                     help="With --input: only files modified in the last N days")
@@ -84,9 +84,17 @@ def main(argv=None) -> int:
         model_for_log = gemini_model
     else:
         gemini_model = cfg.get("GEMINI_MODEL", _GEMINI_DEFAULT)
-        whisper_model = args.model or cfg.get(
-            "WHISPER_MODEL", "bitwisemind/sam_15000_clean_text_full_model"
-        )
+        if engine == "whisper-tugstugi":
+            # Keep Tugstugi pluggable even when Docker/host config sets the
+            # legacy SAM15K WHISPER_MODEL default. Use --model for explicit
+            # Tugstugi overrides instead of inheriting the global SAM15K value.
+            whisper_model = (
+                args.model or "bengaliAI/tugstugi_bengaliai-asr_whisper-medium"
+            )
+        else:
+            whisper_model = args.model or cfg.get(
+                "WHISPER_MODEL", "bitwisemind/sam_15000_clean_text_full_model"
+            )
         model_for_log = whisper_model
 
     log.info(

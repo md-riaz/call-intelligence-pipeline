@@ -16,6 +16,7 @@ from ..audio import AudioPreprocessor, StereoSplitter
 log = logging.getLogger(__name__)
 
 _DEFAULT_MODEL = "bitwisemind/sam_15000_clean_text_full_model"
+TUGSTUGI_MODEL = "bengaliAI/tugstugi_bengaliai-asr_whisper-medium"
 _LANGUAGE_NAMES = {
     "bn": "bengali",
     "ben": "bengali",
@@ -38,7 +39,13 @@ class WhisperSam15000Backend(ASRBackend):
     _processor = None
     _model_id_loaded: Optional[str] = None
 
-    def __init__(self, model_id: Optional[str] = None, temp_dir: Optional[str] = None):
+    def __init__(
+        self,
+        model_id: Optional[str] = None,
+        temp_dir: Optional[str] = None,
+        provider_name: str = "whisper-sam15000",
+    ):
+        self.name = provider_name
         self.model_id = model_id or os.getenv("WHISPER_MODEL") or _DEFAULT_MODEL
         self.temp_dir = Path(temp_dir or os.getenv("ASR_TEMP_DIR") or "./transcripts/_temp")
         self.temp_dir.mkdir(parents=True, exist_ok=True)

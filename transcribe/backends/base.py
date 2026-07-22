@@ -69,9 +69,22 @@ def create_backend(
     if selected in {"whisper-sam15000", "sam15000", "whisper_sam15000"}:
         from .whisper_sam15000 import WhisperSam15000Backend
 
-        return WhisperSam15000Backend(model_id=whisper_model_id, temp_dir=temp_dir)
+        return WhisperSam15000Backend(
+            model_id=whisper_model_id,
+            temp_dir=temp_dir,
+            provider_name="whisper-sam15000",
+        )
+
+    if selected in {"whisper-tugstugi", "tugstugi", "bengaliai-whisper-medium"}:
+        from .whisper_sam15000 import TUGSTUGI_MODEL, WhisperSam15000Backend
+
+        return WhisperSam15000Backend(
+            model_id=whisper_model_id or TUGSTUGI_MODEL,
+            temp_dir=temp_dir,
+            provider_name="whisper-tugstugi",
+        )
 
     raise ValueError(
         f"Unsupported ASR engine: {engine!r}. "
-        "Supported engines: gemini, whisper-sam15000"
+        "Supported engines: gemini, whisper-sam15000, whisper-tugstugi"
     )

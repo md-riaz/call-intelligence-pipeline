@@ -167,6 +167,34 @@ def test_cli_parses_engine_whisper_sam15000():
     assert args.language == "bn"
 
 
+
+
+def test_cli_parses_engine_whisper_tugstugi():
+    args = build_parser().parse_args(
+        ["--file", "x.wav", "--engine", "whisper-tugstugi", "--language", "bn"]
+    )
+    assert args.engine == "whisper-tugstugi"
+    assert args.language == "bn"
+
+
+def test_tugstugi_factory_uses_default_model(monkeypatch):
+    from transcribe.backends import base
+
+    captured = {}
+
+    class FakeBackend:
+        def __init__(self, model_id=None, temp_dir=None, provider_name=""):
+            captured["model_id"] = model_id
+            captured["provider_name"] = provider_name
+
+    monkeypatch.setattr(
+        "transcribe.backends.whisper_sam15000.WhisperSam15000Backend", FakeBackend
+    )
+    backend = base.create_backend("whisper-tugstugi")
+    assert isinstance(backend, FakeBackend)
+    assert captured["model_id"] == "bengaliAI/tugstugi_bengaliai-asr_whisper-medium"
+    assert captured["provider_name"] == "whisper-tugstugi"
+
 def test_backend_factory_rejects_unknown_engine():
     import pytest
     from transcribe.backends.base import create_backend
