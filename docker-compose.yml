@@ -7,6 +7,17 @@ services:
     image: call-intelligence-pipeline:experiment
     container_name: call-intelligence-pipeline
     restart: unless-stopped
+    labels:
+      - "traefik.enable=true"
+      - "traefik.http.routers.whisper-bn-http.entrypoints=web"
+      - "traefik.http.routers.whisper-bn-http.rule=Host(`whisper-bn.ai-api.ancbd.com`)"
+      - "traefik.http.routers.whisper-bn-http.middlewares=https-redirect@file"
+      - "traefik.http.routers.whisper-bn-http.service=whisper-bn"
+      - "traefik.http.routers.whisper-bn.entrypoints=websecure"
+      - "traefik.http.routers.whisper-bn.rule=Host(`whisper-bn.ai-api.ancbd.com`)"
+      - "traefik.http.routers.whisper-bn.tls=true"
+      - "traefik.http.routers.whisper-bn.tls.certresolver=letsencrypt"
+      - "traefik.http.services.whisper-bn.loadbalancer.server.port=3433"
     # The current host's Docker bridge DNS cannot resolve external hosts.
     # Host networking lets both image builds and the running app use the host
     # network stack without changing the Docker daemon or production services.
@@ -40,7 +51,7 @@ services:
       test:
         - CMD-SHELL
         - >-
-          python -c 'import os, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/" % os.environ.get("PORT", "3433"), timeout=3).read(1)'
+          python -c 'import os, urllib.request; urllib.request.urlopen("http://127.0.0.1:%s/health" % os.environ.get("PORT", "3433"), timeout=3).read(1)'
       interval: 30s
       timeout: 5s
       start_period: 20s
