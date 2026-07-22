@@ -21,6 +21,39 @@ def test_supported_formats():
     assert not AudioPreprocessor.supported("notes.txt")
 
 
+def test_supported_extensionless_audio_probe(tmp_path, monkeypatch):
+    audio = tmp_path / "savedly_sample"
+    audio.write_bytes(b"not actually decoded because ffprobe is mocked")
+
+    class Result:
+        returncode = 0
+        stdout = "audio\n"
+
+    def fake_run(cmd, capture_output, text):
+        assert cmd[0] == "ffprobe"
+        assert str(audio) == cmd[-1]
+        assert capture_output is True
+        assert text is True
+        return Result()
+
+    monkeypatch.setattr("transcribe.audio.subprocess.run", fake_run)
+
+    assert AudioPreprocessor.supported(audio)
+
+
+def test_unsupported_extensionless_file_probe_failure(tmp_path, monkeypatch):
+    unknown = tmp_path / "notes"
+    unknown.write_text("plain text")
+
+    class Result:
+        returncode = 1
+        stdout = ""
+
+    monkeypatch.setattr("transcribe.audio.subprocess.run", lambda *a, **k: Result())
+
+    assert not AudioPreprocessor.supported(unknown)
+
+
 def test_srt_timestamp():
     assert _srt_timestamp(0) == "00:00:00,000"
     assert _srt_timestamp(3661.5) == "01:01:01,500"

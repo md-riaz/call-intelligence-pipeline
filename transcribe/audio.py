@@ -69,7 +69,23 @@ class AudioPreprocessor:
 
     @classmethod
     def supported(cls, path) -> bool:
-        return Path(path).suffix.lower() in cls.SUPPORTED
+        p = Path(path)
+        if p.suffix.lower() in cls.SUPPORTED:
+            return True
+        if not p.is_file():
+            return False
+
+        # Some downloaded recordings arrive without an extension even though
+        # the container format is supported (for example, MP3 saved as
+        # ``savedly_sample``). Probe the media content before rejecting it so
+        # CLI single-file processing follows the same reality as ffmpeg.
+        cmd = [
+            "ffprobe", "-v", "error", "-select_streams", "a:0",
+            "-show_entries", "stream=codec_type",
+            "-of", "default=noprint_wrappers=1:nokey=1", str(p),
+        ]
+        r = subprocess.run(cmd, capture_output=True, text=True)
+        return r.returncode == 0 and "audio" in r.stdout.lower().split()
 
 
 class StereoSplitter:

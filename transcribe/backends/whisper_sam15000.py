@@ -3,7 +3,9 @@
 from __future__ import annotations
 
 import logging
+import math
 import os
+import subprocess
 import time
 from pathlib import Path
 from typing import Iterable, Optional
@@ -166,37 +168,122 @@ class WhisperSam15000Backend(ASRBackend):
         language: Optional[str],
         speaker_labels: tuple[str, str],
     ) -> list[ASRResult]:
-        # HuggingFace ASR pipeline accepts a list and reuses the loaded model.
-        generate_kwargs = self._generate_kwargs(language)
-        outputs = self._asr(
-            audio_files,
-            return_timestamps=True,
-            batch_size=int(os.getenv("ASR_BATCH_SIZE", "2")),
-            generate_kwargs=generate_kwargs,
-        )
-        if isinstance(outputs, dict):
-            outputs = [outputs]
-        return [
-            self._normalize_pipeline_output(out, path, language=language)
-            for out, path in zip(outputs, audio_files)
-        ]
+        # The Transformers Whisper long-form path requires timestamp generation
+        # for inputs longer than 30s. SAM15K is an older fine-tuned checkpoint
+        # whose generation_config lacks no_timestamps_token_id, so that path
+        # fails before decoding. Use explicit file-level chunking and run each
+        # window through short-form ASR with timestamps disabled.
+        return [self._transcribe_one(path, language=language) for path in audio_files]
 
     def _transcribe_one(self, audio_file: str, language: Optional[str]) -> ASRResult:
+        duration = AudioPreprocessor.duration(audio_file)
+        chunk_length = self._chunk_length_seconds()
+        if not self._return_timestamps() and duration > chunk_length:
+            return self._transcribe_chunked_shortform(audio_file, language=language, duration=duration)
+
+        self._configure_generation(language)
         output = self._asr(
             audio_file,
-            return_timestamps=True,
+            return_timestamps=self._return_timestamps(),
             generate_kwargs=self._generate_kwargs(language),
         )
         return self._normalize_pipeline_output(output, audio_file, language=language)
 
-    def _generate_kwargs(self, language: Optional[str]) -> dict:
+    def _transcribe_chunked_shortform(
+        self, audio_file: str, language: Optional[str], duration: float
+    ) -> ASRResult:
+        chunk_length = self._chunk_length_seconds()
+        chunks = self._split_shortform_chunks(audio_file, chunk_length)
+        segments = []
+        self._configure_generation(language)
+        for offset, chunk_path in chunks:
+            output = self._asr(
+                chunk_path,
+                return_timestamps=False,
+                generate_kwargs=self._generate_kwargs(language),
+            )
+            text = (output.get("text") or "").strip()
+            if not text:
+                continue
+            chunk_duration = AudioPreprocessor.duration(chunk_path)
+            segments.append(
+                {
+                    "start": round(offset, 2),
+                    "end": round(min(offset + chunk_duration, duration), 2),
+                    "speaker": "",
+                    "text": text,
+                    "avg_logprob": 0.0,
+                    "no_speech_prob": 0.0,
+                    "compression_ratio": 1.0,
+                }
+            )
+        return {
+            "segments": segments,
+            "full_text": " ".join(s["text"] for s in segments),
+            "language_detected": language or "bn",
+            "language_confidence": 1.0 if language else 0.0,
+            "duration_seconds": round(duration, 2),
+            "processing_time_seconds": 0.0,
+            "speakers_separated": False,
+        }
+
+    def _split_shortform_chunks(self, audio_file: str, chunk_length: float) -> list[tuple[float, str]]:
+        duration = AudioPreprocessor.duration(audio_file)
+        if duration <= 0:
+            return [(0.0, audio_file)]
+
+        source = Path(audio_file)
+        chunks: list[tuple[float, str]] = []
+        total = max(1, math.ceil(duration / chunk_length))
+        for index in range(total):
+            offset = index * chunk_length
+            if offset >= duration:
+                break
+            out = self.temp_dir / f"{source.stem}_chunk_{index:04d}.wav"
+            cmd = [
+                "ffmpeg", "-nostdin", "-ss", f"{offset:.3f}", "-i", str(source),
+                "-t", f"{chunk_length:.3f}", "-ar", "16000", "-ac", "1",
+                "-acodec", "pcm_s16le", str(out), "-y", "-loglevel", "error",
+            ]
+            result = subprocess.run(cmd, capture_output=True, text=True)
+            if result.returncode != 0:
+                raise RuntimeError(f"ffmpeg chunk failed: {result.stderr}")
+            chunks.append((offset, str(out)))
+        return chunks
+
+    @staticmethod
+    def _return_timestamps() -> bool:
+        # The SAM15K model does not publish the Whisper timestamp generation
+        # config required by Transformers for timestamped generation. Keep the
+        # JSON schema stable by using duration-spanning chunk segments unless
+        # callers explicitly opt into timestamp experiments.
+        value = os.getenv("ASR_RETURN_TIMESTAMPS", "false").strip().lower()
+        return value in {"1", "true", "yes", "on"}
+
+    @staticmethod
+    def _chunk_length_seconds() -> float:
+        chunk_length = float(os.getenv("ASR_CHUNK_LENGTH_S", "25"))
+        if chunk_length <= 0:
+            return 25.0
+        return min(chunk_length, 29.0)
+
+    def _configure_generation(self, language: Optional[str]) -> None:
+        # This model ships an older Whisper generation config. Passing the newer
+        # `task` argument to `generate()` triggers Transformers compatibility
+        # checks. Passing `forced_decoder_ids` through generate_kwargs is also
+        # rejected by newer Transformers. Store prompt IDs on generation_config
+        # instead, which this model accepts.
         if not language or language == "auto":
-            return {"task": "transcribe"}
+            return
 
         lang = _LANGUAGE_NAMES.get(language.lower(), language.lower())
         processor = self._loaded_processor
         forced_ids = processor.get_decoder_prompt_ids(language=lang, task="transcribe")
-        return {"forced_decoder_ids": forced_ids, "task": "transcribe"}
+        self._asr.model.generation_config.forced_decoder_ids = forced_ids
+
+    @staticmethod
+    def _generate_kwargs(language: Optional[str]) -> dict:
+        return {}
 
     @staticmethod
     def _normalize_pipeline_output(output: dict, audio_file: str, language: Optional[str]) -> ASRResult:
