@@ -42,21 +42,21 @@ WEB_TIMEOUT=300
 Single file:
 
 ```bash
-docker compose run --rm call-intelligence-demo \
+docker compose run --rm call-intelligence-pipeline \
   transcribe --file /app/samples/call.wav --output /app/transcripts --language bn --labels "Agent,Customer"
 ```
 
 Batch folder:
 
 ```bash
-docker compose run --rm call-intelligence-demo \
+docker compose run --rm call-intelligence-pipeline \
   transcribe --input /app/samples --output /app/transcripts --language bn --labels "Agent,Customer"
 ```
 
 Analyze transcripts:
 
 ```bash
-docker compose run --rm call-intelligence-demo \
+docker compose run --rm call-intelligence-pipeline \
   transcribe-analyze --input /app/transcripts
 ```
 
