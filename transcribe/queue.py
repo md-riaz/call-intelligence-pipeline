@@ -142,9 +142,14 @@ class TranscriptionQueue:
     @staticmethod
     def job_to_dict(job: QueueJob) -> dict:
         data = asdict(job)
+        data["engine"] = "whisper-bn"
+        data["result_path"] = job.result_json_path
+        data["transcript"] = None
         if job.result_json_path and Path(job.result_json_path).exists():
             try:
-                data["result"] = json.loads(Path(job.result_json_path).read_text(encoding="utf-8"))
+                transcript = json.loads(Path(job.result_json_path).read_text(encoding="utf-8"))
+                data["transcript"] = transcript
+                data["result"] = transcript  # Backwards-compatible alias.
             except Exception:
                 data["result"] = None
         return data

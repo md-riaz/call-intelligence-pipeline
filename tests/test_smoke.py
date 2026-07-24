@@ -297,3 +297,24 @@ def test_whisper_segments_to_text():
 
     text = _segments_to_text([{"speaker": "Agent", "text": "হ্যালো"}])
     assert text == "[Agent]: হ্যালো"
+
+
+def test_queue_completed_job_includes_inline_transcript(tmp_path):
+    from transcribe.queue import TranscriptionQueue
+
+    transcript_path = tmp_path / "out.json"
+    transcript_path.write_text(
+        json.dumps({"call_id": "out", "status": "success", "full_text": "hello"}),
+        encoding="utf-8",
+    )
+    queue = TranscriptionQueue(str(tmp_path / "queue.sqlite3"))
+    job = queue.create_job("audio.wav", str(tmp_path), language="bn")
+    queue.complete_job(job.id, str(transcript_path))
+
+    data = TranscriptionQueue.job_to_dict(queue.get_job(job.id))
+
+    assert data["engine"] == "whisper-bn"
+    assert data["result_json_path"] == str(transcript_path)
+    assert data["result_path"] == str(transcript_path)
+    assert data["transcript"]["call_id"] == "out"
+    assert data["result"] == data["transcript"]

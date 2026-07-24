@@ -29,7 +29,8 @@ app = FastAPI(
     description=(
         "Public Bengali speech-to-text API backed by the SAM15K whisper-bn engine. "
         "Upload one audio file, receive a queued transcription job, then poll the job "
-        "endpoint until it completes. Only the `whisper-bn` engine is exposed."
+        "endpoint until it completes. Completed job responses include the transcript "
+        "JSON inline under `transcript`. Only the `whisper-bn` engine is exposed."
     ),
 )
 queue = TranscriptionQueue(DB_PATH)
@@ -138,8 +139,9 @@ async def create_transcription(
     "/v1/transcriptions/{job_id}",
     summary="Get Transcription",
     description=(
-        "Return the queued job state. When complete, `result_path` points to the JSON "
-        "transcript written by the service."
+        "Return the queued job state. When complete, the response includes the full "
+        "transcript JSON inline under `transcript`, plus `result_json_path`/`result_path` "
+        "for artifact location compatibility."
     ),
     responses={
         200: {
@@ -154,10 +156,21 @@ async def create_transcription(
                         "output_dir": "./transcripts",
                         "language": "bn",
                         "labels": "Agent,Customer",
+                        "result_json_path": "./transcripts/example.json",
                         "result_path": "./transcripts/example.json",
+                        "transcript": {
+                            "call_id": "example",
+                            "filename": "example.wav",
+                            "language_detected": "bn",
+                            "segments": [
+                                {"start": 0.0, "end": 2.4, "speaker": "Agent", "text": "হ্যালো"}
+                            ],
+                            "full_text": "[Agent]: হ্যালো",
+                            "status": "success"
+                        },
                         "error": None,
-                        "created_at": "2026-07-22T11:10:00Z",
-                        "updated_at": "2026-07-22T11:11:30Z",
+                        "created_at": "2026-07-22 11:10:00",
+                        "updated_at": "2026-07-22 11:11:30",
                     }
                 }
             },
@@ -192,7 +205,9 @@ def get_transcription(job_id: str) -> dict:
                                 "engine": "whisper-bn",
                                 "language": "bn",
                                 "labels": "Agent,Customer",
+                                "result_json_path": "./transcripts/example.json",
                                 "result_path": "./transcripts/example.json",
+                                "transcript": {"call_id": "example", "status": "success", "full_text": "[Agent]: হ্যালো"},
                                 "error": None,
                             }
                         ]

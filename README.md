@@ -21,8 +21,8 @@ Endpoints:
 
 - `GET /health` returns service health and engine name.
 - `POST /v1/transcriptions` accepts multipart audio upload and returns `202 {"job_id": ..., "status": "queued", "engine": "whisper-bn"}`.
-- `GET /v1/transcriptions/{job_id}` returns queued, processing, completed, or failed job state. Completed jobs include the transcript JSON when available.
-- `GET /v1/transcriptions?limit=100` lists recent jobs.
+- `GET /v1/transcriptions/{job_id}` returns queued, processing, completed, or failed job state. Completed jobs include the full transcript JSON inline as `transcript`, not just an artifact path.
+- `GET /v1/transcriptions?limit=100` lists recent jobs. Completed jobs include inline `transcript` when the JSON artifact is still available.
 - `GET /docs` opens the interactive OpenAPI docs.
 
 Example:
@@ -31,6 +31,26 @@ Example:
 curl -F "file=@call.wav" -F "language=bn" -F "labels=Agent,Customer"   http://localhost:3433/v1/transcriptions
 
 curl http://localhost:3433/v1/transcriptions/JOB_ID
+```
+
+Completed job responses include both compatibility paths and the inline transcript payload:
+
+```json
+{
+  "id": "JOB_ID",
+  "status": "completed",
+  "engine": "whisper-bn",
+  "result_json_path": "./transcripts/call.json",
+  "result_path": "./transcripts/call.json",
+  "transcript": {
+    "call_id": "call",
+    "segments": [
+      {"start": 0.0, "end": 2.4, "speaker": "Agent", "text": "হ্যালো"}
+    ],
+    "full_text": "[Agent]: হ্যালো",
+    "status": "success"
+  }
+}
 ```
 
 Queue state is stored in SQLite at `ASR_QUEUE_DB`, default `./transcripts/transcription_queue.sqlite3`. Uploaded audio is stored under `ASR_UPLOAD_DIR`, default `./transcripts/uploads`. Transcript JSON/TXT/SRT outputs are written to `ASR_OUTPUT_DIR`, default `./transcripts`.
