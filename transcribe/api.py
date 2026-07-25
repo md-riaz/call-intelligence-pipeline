@@ -19,6 +19,18 @@ except ImportError as exc:  # pragma: no cover
     raise SystemExit("FastAPI dependencies are missing. Install with: pip install '.[api]'") from exc
 
 APP_NAME = "whisper-bn"
+PUBLIC_JOB_FIELDS = (
+    "id",
+    "status",
+    "engine",
+    "language",
+    "labels",
+    "transcript",
+    "result",
+    "error",
+    "created_at",
+    "updated_at",
+)
 UPLOAD_DIR = Path(os.getenv("ASR_UPLOAD_DIR", "./transcripts/uploads"))
 OUTPUT_DIR = Path(os.getenv("ASR_OUTPUT_DIR", "./transcripts"))
 DB_PATH = os.getenv("ASR_QUEUE_DB", str(OUTPUT_DIR / "transcription_queue.sqlite3"))
@@ -30,8 +42,8 @@ app = FastAPI(
         "Public Bengali speech-to-text API backed by the SAM15K whisper-bn engine. "
         "Upload one audio file, receive a queued transcription job, then poll the job "
         "endpoint until it completes. Completed job responses include the transcript "
-        "JSON inline under `transcript` and HTTP-accessible artifact URLs under "
-        "`urls`, so clients never need container or host filesystem access. "
+        "JSON inline under `transcript` and `result`. Public job responses do not "
+        "include server filesystem paths or artifact URLs. "
         "Only the `whisper-bn` engine is exposed."
     ),
 )
@@ -142,8 +154,8 @@ async def create_transcription(
     summary="Get Transcription",
     description=(
         "Return the queued job state. When complete, the response includes the full "
-        "transcript JSON inline under `transcript`, plus `result_json_path`/`result_path` "
-        "for artifact location compatibility."
+        "transcript JSON inline under `transcript` and `result`. Public responses "
+        "do not expose server filesystem paths or artifact URLs."
     ),
     responses={
         200: {
@@ -154,12 +166,8 @@ async def create_transcription(
                         "id": "01J4W4Q0R7M7MZ3M8P0N9B4K2T",
                         "status": "completed",
                         "engine": "whisper-bn",
-                        "audio_path": "./transcripts/uploads/example.wav",
-                        "output_dir": "./transcripts",
                         "language": "bn",
                         "labels": "Agent,Customer",
-                        "result_json_path": "./transcripts/example.json",
-                        "result_path": "./transcripts/example.json",
                         "transcript": {
                             "call_id": "example",
                             "filename": "example.wav",
@@ -213,8 +221,6 @@ def get_transcription_alias(job_id: str, request: Request) -> dict:
                                 "engine": "whisper-bn",
                                 "language": "bn",
                                 "labels": "Agent,Customer",
-                                "result_json_path": "./transcripts/example.json",
-                                "result_path": "./transcripts/example.json",
                                 "transcript": {"call_id": "example", "status": "success", "full_text": "[Agent]: হ্যালো"},
                                 "error": None,
                             }
@@ -233,8 +239,8 @@ def list_transcriptions(request: Request, limit: int = 100) -> dict:
     "/v1/transcriptions/{job_id}/result",
     summary="Download Transcript JSON",
     description=(
-        "Return the completed transcript JSON over HTTP. Use this endpoint instead "
-        "of reading `result_path` or `result_json_path` from the server filesystem."
+        "Return the completed transcript JSON over HTTP. The normal job polling "
+        "response also includes this same transcript inline under `transcript` and `result`."
     ),
     responses={
         200: {
@@ -310,20 +316,10 @@ def _get_job_or_404(job_id: str):
 
 
 def _job_to_http_dict(job, request: Request | None) -> dict:
-    data = TranscriptionQueue.job_to_dict(job)
-    if request is not None:
-        base = str(request.base_url).rstrip("/")
-        urls = {
-            "self": f"{base}/v1/transcriptions/{job.id}",
-            "result_json": f"{base}/v1/transcriptions/{job.id}/result",
-            "text": f"{base}/v1/transcriptions/{job.id}/text",
-            "srt": f"{base}/v1/transcriptions/{job.id}/srt",
-        }
-        data["urls"] = urls
-        data["result_url"] = urls["result_json"]
-        data["text_url"] = urls["text"]
-        data["srt_url"] = urls["srt"]
-    return data
+    internal = TranscriptionQueue.job_to_dict(job)
+    public = {field: internal.get(field) for field in PUBLIC_JOB_FIELDS}
+    public["engine"] = public.get("engine") or APP_NAME
+    return {key: value for key, value in public.items() if value is not None}
 
 
 def _completed_artifact_path(job_id: str, suffix: str) -> Path:

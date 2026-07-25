@@ -321,7 +321,25 @@ def test_queue_completed_job_includes_inline_transcript(tmp_path):
 
 
 
-def test_api_completed_job_exposes_http_artifact_urls_and_downloads(tmp_path, monkeypatch):
+def _assert_no_public_path_or_url_leaks(value):
+    forbidden_key_parts = ("path", "dir", "url", "urls")
+    forbidden_value_parts = ("/home/", "/app/", "/tmp/", "\\", "http://", "https://")
+
+    def walk(item):
+        if isinstance(item, dict):
+            for key, nested in item.items():
+                assert not any(part in key.lower() for part in forbidden_key_parts), key
+                walk(nested)
+        elif isinstance(item, list):
+            for nested in item:
+                walk(nested)
+        elif isinstance(item, str):
+            assert not any(part in item for part in forbidden_value_parts), item
+
+    walk(value)
+
+
+def test_api_completed_job_exposes_only_inline_result_and_downloads(tmp_path, monkeypatch):
     from fastapi.testclient import TestClient
     from transcribe import api
 
@@ -346,10 +364,12 @@ def test_api_completed_job_exposes_http_artifact_urls_and_downloads(tmp_path, mo
     assert response.status_code == 200
     data = response.json()
     assert data["transcript"]["full_text"] == "[Agent]: হ্যালো"
-    assert data["result_path"] == str(transcript_path)
-    assert data["urls"]["result_json"].endswith(f"/v1/transcriptions/{job.id}/result")
-    assert data["result_url"] == data["urls"]["result_json"]
-    assert data["text_url"] == data["urls"]["text"]
+    assert data["result"] == data["transcript"]
+    _assert_no_public_path_or_url_leaks(data)
+
+    list_response = client.get("/v1/transcriptions")
+    assert list_response.status_code == 200
+    _assert_no_public_path_or_url_leaks(list_response.json())
 
     result_response = client.get(f"/v1/transcriptions/{job.id}/result")
     assert result_response.status_code == 200
