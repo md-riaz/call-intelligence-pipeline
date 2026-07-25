@@ -21,8 +21,11 @@ Endpoints:
 
 - `GET /health` returns service health and engine name.
 - `POST /v1/transcriptions` accepts multipart audio upload and returns `202 {"job_id": ..., "status": "queued", "engine": "whisper-bn"}`.
-- `GET /v1/transcriptions/{job_id}` returns queued, processing, completed, or failed job state. Completed jobs include the full transcript JSON inline as `transcript`, not just an artifact path.
-- `GET /v1/transcriptions?limit=100` lists recent jobs. Completed jobs include inline `transcript` when the JSON artifact is still available.
+- `GET /v1/transcriptions/{job_id}` returns queued, processing, completed, or failed job state. Completed jobs include the full transcript JSON inline as `transcript`, not just an artifact path. They also include HTTP-accessible `urls.result_json`, `urls.text`, and `urls.srt` links.
+- `GET /v1/transcriptions/{job_id}/result` returns the completed structured transcript JSON over HTTP.
+- `GET /v1/transcriptions/{job_id}/text` returns the completed plain text transcript over HTTP.
+- `GET /v1/transcriptions/{job_id}/srt` returns the completed SRT subtitles over HTTP when available.
+- `GET /v1/transcriptions?limit=100` lists recent jobs. Completed jobs include inline `transcript` and artifact URLs when the JSON artifact is still available.
 - `GET /docs` opens the interactive OpenAPI docs.
 
 Example:
@@ -31,6 +34,8 @@ Example:
 curl -F "file=@call.wav" -F "language=bn" -F "labels=Agent,Customer"   http://localhost:3433/v1/transcriptions
 
 curl http://localhost:3433/v1/transcriptions/JOB_ID
+curl http://localhost:3433/v1/transcriptions/JOB_ID/result
+curl http://localhost:3433/v1/transcriptions/JOB_ID/text
 ```
 
 Completed job responses include both compatibility paths and the inline transcript payload:
@@ -42,6 +47,12 @@ Completed job responses include both compatibility paths and the inline transcri
   "engine": "whisper-bn",
   "result_json_path": "./transcripts/call.json",
   "result_path": "./transcripts/call.json",
+  "urls": {
+    "self": "http://localhost:3433/v1/transcriptions/JOB_ID",
+    "result_json": "http://localhost:3433/v1/transcriptions/JOB_ID/result",
+    "text": "http://localhost:3433/v1/transcriptions/JOB_ID/text",
+    "srt": "http://localhost:3433/v1/transcriptions/JOB_ID/srt"
+  },
   "transcript": {
     "call_id": "call",
     "segments": [
@@ -52,6 +63,8 @@ Completed job responses include both compatibility paths and the inline transcri
   }
 }
 ```
+
+Clients should treat `result_json_path` and `result_path` as server-side artifact metadata only. Integration clients should use the inline `transcript` field or the HTTP `urls.*` links instead.
 
 Queue state is stored in SQLite at `ASR_QUEUE_DB`, default `./transcripts/transcription_queue.sqlite3`. Uploaded audio is stored under `ASR_UPLOAD_DIR`, default `./transcripts/uploads`. Transcript JSON/TXT/SRT outputs are written to `ASR_OUTPUT_DIR`, default `./transcripts`.
 

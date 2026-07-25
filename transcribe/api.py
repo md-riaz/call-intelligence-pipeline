@@ -13,8 +13,8 @@ from .pipeline import TranscriptionPipeline
 from .queue import TranscriptionQueue
 
 try:
-    from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, UploadFile
-    from fastapi.responses import JSONResponse
+    from fastapi import BackgroundTasks, FastAPI, File, Form, HTTPException, Request, UploadFile
+    from fastapi.responses import FileResponse, JSONResponse, PlainTextResponse
 except ImportError as exc:  # pragma: no cover
     raise SystemExit("FastAPI dependencies are missing. Install with: pip install '.[api]'") from exc
 
@@ -30,7 +30,9 @@ app = FastAPI(
         "Public Bengali speech-to-text API backed by the SAM15K whisper-bn engine. "
         "Upload one audio file, receive a queued transcription job, then poll the job "
         "endpoint until it completes. Completed job responses include the transcript "
-        "JSON inline under `transcript`. Only the `whisper-bn` engine is exposed."
+        "JSON inline under `transcript` and HTTP-accessible artifact URLs under "
+        "`urls`, so clients never need container or host filesystem access. "
+        "Only the `whisper-bn` engine is exposed."
     ),
 )
 queue = TranscriptionQueue(DB_PATH)
@@ -181,11 +183,17 @@ async def create_transcription(
         },
     },
 )
-def get_transcription(job_id: str) -> dict:
-    job = queue.get_job(job_id)
-    if not job:
-        raise HTTPException(status_code=404, detail="Job not found")
-    return TranscriptionQueue.job_to_dict(job)
+def get_transcription(job_id: str, request: Request) -> dict:
+    job = _get_job_or_404(job_id)
+    return _job_to_http_dict(job, request)
+
+
+@app.get(
+    "/transcriptions/{job_id}",
+    include_in_schema=False,
+)
+def get_transcription_alias(job_id: str, request: Request) -> dict:
+    return get_transcription(job_id, request)
 
 
 @app.get(
@@ -217,8 +225,126 @@ def get_transcription(job_id: str) -> dict:
         }
     },
 )
-def list_transcriptions(limit: int = 100) -> dict:
-    return {"jobs": [TranscriptionQueue.job_to_dict(job) for job in queue.list_jobs(limit=limit)]}
+def list_transcriptions(request: Request, limit: int = 100) -> dict:
+    return {"jobs": [_job_to_http_dict(job, request) for job in queue.list_jobs(limit=limit)]}
+
+
+@app.get(
+    "/v1/transcriptions/{job_id}/result",
+    summary="Download Transcript JSON",
+    description=(
+        "Return the completed transcript JSON over HTTP. Use this endpoint instead "
+        "of reading `result_path` or `result_json_path` from the server filesystem."
+    ),
+    responses={
+        200: {
+            "description": "Completed transcript JSON.",
+            "content": {"application/json": {"example": {"call_id": "call", "status": "success", "full_text": "[Agent]: হ্যালো"}}},
+        },
+        404: {"description": "Job or transcript artifact not found."},
+        409: {"description": "Job is not completed yet."},
+    },
+)
+def get_transcription_result(job_id: str) -> JSONResponse:
+    path = _completed_artifact_path(job_id, ".json")
+    return JSONResponse(content=_read_json(path))
+
+
+@app.get("/transcriptions/{job_id}/result", include_in_schema=False)
+def get_transcription_result_alias(job_id: str) -> JSONResponse:
+    return get_transcription_result(job_id)
+
+
+@app.get(
+    "/v1/transcriptions/{job_id}/text",
+    summary="Download Transcript Text",
+    description="Return the completed human-readable transcript text over HTTP.",
+    responses={
+        200: {
+            "description": "Plain text transcript.",
+            "content": {"text/plain": {"example": "[Agent]: হ্যালো"}},
+        },
+        404: {"description": "Job or transcript artifact not found."},
+        409: {"description": "Job is not completed yet."},
+    },
+)
+def get_transcription_text(job_id: str) -> PlainTextResponse:
+    json_path = _completed_artifact_path(job_id, ".json")
+    text_path = json_path.with_suffix(".txt")
+    if text_path.exists():
+        return PlainTextResponse(text_path.read_text(encoding="utf-8"))
+    transcript = _read_json(json_path)
+    return PlainTextResponse(str(transcript.get("full_text") or ""))
+
+
+@app.get("/transcriptions/{job_id}/text", include_in_schema=False)
+def get_transcription_text_alias(job_id: str) -> PlainTextResponse:
+    return get_transcription_text(job_id)
+
+
+@app.get(
+    "/v1/transcriptions/{job_id}/srt",
+    summary="Download Transcript SRT",
+    description="Return the completed SRT subtitle artifact over HTTP when available.",
+    responses={
+        200: {"description": "SRT subtitle file.", "content": {"application/x-subrip": {}}},
+        404: {"description": "Job or SRT artifact not found."},
+        409: {"description": "Job is not completed yet."},
+    },
+)
+def get_transcription_srt(job_id: str) -> FileResponse:
+    path = _completed_artifact_path(job_id, ".srt")
+    return FileResponse(path, media_type="application/x-subrip", filename=path.name)
+
+
+@app.get("/transcriptions/{job_id}/srt", include_in_schema=False)
+def get_transcription_srt_alias(job_id: str) -> FileResponse:
+    return get_transcription_srt(job_id)
+
+
+def _get_job_or_404(job_id: str):
+    job = queue.get_job(job_id)
+    if not job:
+        raise HTTPException(status_code=404, detail="Job not found")
+    return job
+
+
+def _job_to_http_dict(job, request: Request | None) -> dict:
+    data = TranscriptionQueue.job_to_dict(job)
+    if request is not None:
+        base = str(request.base_url).rstrip("/")
+        urls = {
+            "self": f"{base}/v1/transcriptions/{job.id}",
+            "result_json": f"{base}/v1/transcriptions/{job.id}/result",
+            "text": f"{base}/v1/transcriptions/{job.id}/text",
+            "srt": f"{base}/v1/transcriptions/{job.id}/srt",
+        }
+        data["urls"] = urls
+        data["result_url"] = urls["result_json"]
+        data["text_url"] = urls["text"]
+        data["srt_url"] = urls["srt"]
+    return data
+
+
+def _completed_artifact_path(job_id: str, suffix: str) -> Path:
+    job = _get_job_or_404(job_id)
+    if job.status != "completed":
+        raise HTTPException(status_code=409, detail="Transcription is not completed yet")
+    if not job.result_json_path:
+        raise HTTPException(status_code=404, detail="Transcript artifact not found")
+    path = Path(job.result_json_path).with_suffix(suffix)
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Transcript artifact not found: {suffix}")
+    return path
+
+
+def _read_json(path: Path) -> dict:
+    import json
+
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except json.JSONDecodeError as exc:
+        raise HTTPException(status_code=500, detail="Transcript JSON artifact is invalid") from exc
 
 
 async def _drain_queue() -> None:

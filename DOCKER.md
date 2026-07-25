@@ -30,7 +30,11 @@ Check a job:
 
 ```bash
 curl http://SERVER_IP:3433/v1/transcriptions/JOB_ID
+curl http://SERVER_IP:3433/v1/transcriptions/JOB_ID/result
+curl http://SERVER_IP:3433/v1/transcriptions/JOB_ID/text
 ```
+
+Completed job responses include inline `transcript` JSON and HTTP artifact links under `urls`. Use `/v1/transcriptions/JOB_ID/result` or `/text` from client code instead of reading `result_path`, which is server-side metadata.
 
 ## Volumes
 

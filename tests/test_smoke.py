@@ -318,3 +318,51 @@ def test_queue_completed_job_includes_inline_transcript(tmp_path):
     assert data["result_path"] == str(transcript_path)
     assert data["transcript"]["call_id"] == "out"
     assert data["result"] == data["transcript"]
+
+
+
+def test_api_completed_job_exposes_http_artifact_urls_and_downloads(tmp_path, monkeypatch):
+    from fastapi.testclient import TestClient
+    from transcribe import api
+
+    transcript_path = tmp_path / "call.json"
+    transcript_path.write_text(
+        json.dumps({"call_id": "call", "status": "success", "full_text": "[Agent]: হ্যালো"}),
+        encoding="utf-8",
+    )
+    transcript_path.with_suffix(".txt").write_text("[Agent]: হ্যালো\n", encoding="utf-8")
+    transcript_path.with_suffix(".srt").write_text(
+        "1\n00:00:00,000 --> 00:00:01,000\nAgent: হ্যালো\n\n",
+        encoding="utf-8",
+    )
+
+    queue = api.TranscriptionQueue(str(tmp_path / "queue.sqlite3"))
+    job = queue.create_job("audio.wav", str(tmp_path), language="bn")
+    queue.complete_job(job.id, str(transcript_path))
+    monkeypatch.setattr(api, "queue", queue)
+
+    client = TestClient(api.app)
+    response = client.get(f"/v1/transcriptions/{job.id}")
+    assert response.status_code == 200
+    data = response.json()
+    assert data["transcript"]["full_text"] == "[Agent]: হ্যালো"
+    assert data["result_path"] == str(transcript_path)
+    assert data["urls"]["result_json"].endswith(f"/v1/transcriptions/{job.id}/result")
+    assert data["result_url"] == data["urls"]["result_json"]
+    assert data["text_url"] == data["urls"]["text"]
+
+    result_response = client.get(f"/v1/transcriptions/{job.id}/result")
+    assert result_response.status_code == 200
+    assert result_response.json()["call_id"] == "call"
+
+    alias_response = client.get(f"/transcriptions/{job.id}/result")
+    assert alias_response.status_code == 200
+    assert alias_response.json()["full_text"] == "[Agent]: হ্যালো"
+
+    text_response = client.get(f"/v1/transcriptions/{job.id}/text")
+    assert text_response.status_code == 200
+    assert "হ্যালো" in text_response.text
+
+    srt_response = client.get(f"/v1/transcriptions/{job.id}/srt")
+    assert srt_response.status_code == 200
+    assert "00:00:00,000" in srt_response.text

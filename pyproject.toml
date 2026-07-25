@@ -32,7 +32,7 @@ sam15000 = [
 ]
 # Reporting helpers (CSV/Excel export).
 reports = ["pandas", "openpyxl", "jinja2"]
-dev = ["pytest", "ruff"]
+dev = ["pytest", "ruff", "httpx2"]
 
 api = ["fastapi>=0.115.0", "uvicorn[standard]>=0.30.0", "python-multipart>=0.0.9"]
 
